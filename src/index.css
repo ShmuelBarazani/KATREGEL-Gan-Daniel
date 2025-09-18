@@ -29,7 +29,6 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,syste
 .table td{padding:8px 10px; border-bottom:1px solid var(--edge)}
 .table input,.table select{background:#102c44; border:1px solid var(--edge); color:var(--ink); border-radius:10px; padding:8px}
 .table .mini{padding:6px 8px}
-
 /* sortable headers */
 .th-sort{cursor:pointer; user-select:none}
 .th-sort .arrow{opacity:.85; margin-inline-start:6px}
@@ -37,24 +36,18 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,syste
 /* chips */
 .chips{display:flex; gap:6px; flex-wrap:wrap}
 .chip{background:#0e2f24; border:1px solid #1b684b; color:#bff7d2; padding:4px 10px; border-radius:999px; font-size:12px}
-.chip.hollow{background:#0f2136; border-color:var(--edge); color:var(--muted)}
+.chip.hollow{background:#0f2136; border-color:var(--edge); color:#9fb0cb}
 
 /* titles */
 .section-title{font-weight:700; margin:4px 0 8px}
 .subtle{font-size:12px; color:#9fb0cb}
 .footer-note{margin-top:8px; font-size:12px; color:var(--muted)}
 
-/* מודלים */
-.modal{position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center}
-.modal .box{background:var(--panel); border:1px solid var(--edge); border-radius:14px; padding:16px; width:min(560px,90vw)}
-.modal .box h3{margin:0 0 8px 0}
-.modal .box textarea{width:100%; min-height:120px; background:#102c44; color:#e8eefc; border:1px solid var(--edge); border-radius:10px; padding:10px}
-
 /* ===== מסך "כוחות": קבוצות למעלה, טבלת שחקנים מתחת ===== */
 .teamsTop{ max-height: 36vh; overflow:auto; margin-bottom:12px; }
 .playersBelow{ max-height: 46vh; min-height: 260px; overflow:auto; }
 
-/* קבוצות – גריד כמו בתמונה */
+/* קבוצות – גריד */
 .teamsGrid{ display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; }
 @media (max-width:1200px){ .teamsGrid{grid-template-columns: repeat(3, 1fr);} }
 @media (max-width:900px){ .teamsGrid{grid-template-columns: repeat(2, 1fr);} }
@@ -67,8 +60,33 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,syste
 
 .player-line{ display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px dashed #244362 }
 .player-line:last-child{ border-bottom:none }
-.handle{ opacity:.7; margin-inline-start:8px; cursor:grab; user-select:none }
+.handle{ opacity:.8; margin-inline-end:8px; cursor:grab; user-select:none } /* ב־RTL הידית מימין לשם */
 
 /* DnD – איזורי נפילה */
 .dropzone{min-height:42px; border:1px dashed transparent; padding:4px; border-radius:10px}
 .dropzone.over{border-color:#2e6bd1; background:#0c2740}
+
+/* ====== הדפסה ====== */
+.printBtnBar{display:flex; gap:8px; margin-bottom:10px}
+.printModal .box{width:min(1200px,95vw)}
+.sheetGrid{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+@media (max-width:900px){ .sheetGrid{grid-template-columns:1fr} }
+.sheet{background:#0b192b; border:1px solid #2b405e; border-radius:10px; padding:10px}
+.sheetHeader{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px}
+.sheetTable{width:100%; border-collapse:collapse}
+.sheetTable th,.sheetTable td{border:1px solid #2b405e; padding:6px; text-align:right}
+.sheetTable th{background:#0e2a3f}
+.boxes{display:grid; grid-template-columns: repeat(10, 18px); gap:6px; justify-content:start}
+.box{width:18px; height:18px; border:1px solid #2b405e; border-radius:4px; background:#09131f}
+.boxRow{display:flex; align-items:center; gap:8px; margin:8px 0}
+.boxRow-label{width:60px; text-align:right; color:#c7d3ea}
+
+/* מצב הדפסה אמיתי */
+@media print{
+  body{background:#fff; color:#000}
+  .page, .modal{margin:0; padding:0; max-width:none}
+  .controls, .appbar, .footer-note, .tabs{display:none !important}
+  .sheet{background:#fff; border-color:#000}
+  .sheetTable th,.sheetTable td{border-color:#000}
+  .box{border-color:#000; background:#fff}
+}
