@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 /* ===== נתוני קבע ===== */
-const LS_KEY = 'katregel_state_v4'
+const LS_KEY = 'katregel_state_v6'
 const POS = [ ['GK','שוער'], ['DF','הגנה'], ['MF','קישור'], ['FW','התקפה'] ]
 const RATING_STEPS = Array.from({length:19}, (_,i)=> (1 + i*0.5)) // 1..10
 
@@ -24,7 +24,7 @@ function useStickyScroll(key){
   return ref
 }
 
-/* players.json: id,name,pos(or role),r(or rating),selected,prefer,avoid */
+/* players.json / CSV */
 function parsePlayersText(text){
   text=(text||'').trim(); if(!text) return []
   try{
@@ -47,7 +47,6 @@ function parsePlayersText(text){
   }
   return out
 }
-/* המרת מזהים לשמות בתצוגת prefer/avoid (אם בקובץ נרשמו ids) */
 function refsToNames(list){
   const id2name = new Map(list.map(p=>[String(p.id), p.name]))
   return list.map(p=>({
@@ -73,7 +72,7 @@ function buildTeamsBalanced(players, numTeams){
   const violatesAvoid = (team,p)=> team.list.some(x=> x.avoid?.includes(p.name) || p.avoid?.includes(x.name))
   const preferSatisfied = (team,p)=> p.prefer?.length? team.list.some(x=> p.prefer.includes(x.name) ): true
 
-  // Random קל כדי לקבל קומבינציות שונות בכל הפעלה
+  // רנדום קל – חלוקות שונות בכל הפעלה
   const sorted=[...pool].sort((a,b)=> (b.rating + Math.random()*0.15) - (a.rating + Math.random()*0.15))
   for(const p of sorted){
     let bestIdx=-1, bestScore=Infinity
@@ -98,16 +97,15 @@ function buildTeamsBalanced(players, numTeams){
   return teams.map(t=>t.list)
 }
 
-/* ====== האפליקציה ====== */
+/* ====== APP ====== */
 export default function App(){
   const [store,setStore]=useStore()
-  const [tab,setTab]=useState('teams') // נפתח על "כוחות" כמו בצילום
+  const [tab,setTab]=useState('teams')
   const [teams,setTeams]=useState([])
   const [numTeams,setNumTeams]=useState(4)
   const [hideRatings,setHideRatings]=useState(false)
   const [printMode,setPrintMode]=useState(false)
 
-  // טעינה ראשונית מ-public/players.json
   useEffect(()=>{(async()=>{
     if(store.players.length>0) return
     try{
@@ -119,24 +117,17 @@ export default function App(){
     }catch{}
   })()},[])
 
-  const playersById=useMemo(()=>new Map(store.players.map(p=>[String(p.id),p])),[store.players])
   const selectedCount = useMemo(()=> store.players.filter(p=>p.selected).length, [store.players])
 
-  /* -------- פעולות שחקנים -------- */
+  /* CRUD players */
   const addPlayer=(p)=> setStore(s=>({...s,players:[...s.players,{id:uid(),selected:true,prefer:[],avoid:[],...p}]}))
   const removePlayer=(id)=> setStore(s=>({...s,players:s.players.filter(p=>String(p.id)!==String(id))}))
   const updatePlayer=(id,patch)=> setStore(s=>({...s,players:s.players.map(p=>String(p.id)===String(id)?{...p,...patch}:p)}))
 
-  /* -------- כוחות -------- */
+  /* Teams actions */
   const makeTeams=()=>{const t=buildTeamsBalanced(store.players,numTeams); setTeams(t); setTab('teams')}
   const clearTeams=()=>setTeams([])
 
-  /* -------- תוצאות (ללשונית דירוג, ללא שינוי כעת) -------- */
-  const [selectedSessionId,setSelectedSessionId]=useState('')
-  const resultsFor = (sid)=> store.results[sid]||{}
-  const setResult=(sid,pid,goals)=> setStore(s=>({...s,results:{...s.results,[sid]:{...resultsFor(sid), [pid]:goals}}}))
-
-  /* ====== UI ====== */
   return (
     <div className={printMode? 'print page':'page'}>
       <div className="appbar">
@@ -156,7 +147,7 @@ export default function App(){
         </div>
         <div className="switch"><input type="checkbox" checked={hideRatings} onChange={e=>setHideRatings(e.target.checked)} /> הסתר ציונים</div>
         <button className="btn" onClick={()=>setPrintMode(v=>!v)}>תצוגת הדפסה</button>
-        <button className="btn" onClick={clearTeams}>קבע מחזור</button>{/* לשמירה אמיתית – כמו בגרסאות הקודמות אפשר להחזיר saveSession */}
+        <button className="btn" onClick={clearTeams}>קבע מחזור</button>
         <button className="btn primary" onClick={makeTeams}>עשה כוחות</button>
         <span className="badge">מסומנים: {selectedCount}</span>
       </div>
@@ -182,8 +173,6 @@ export default function App(){
           hideRatings={hideRatings}
         />
       )}
-
-      {/* לשונית דירוג נשארה כפי שמימשנו קודם – ניתן להחזיר אם תרצה */}
     </div>
   )
 }
@@ -192,7 +181,6 @@ export default function App(){
 
 function PlayersScreen({players, update, remove, add, hideRatings}){
   const wrapRef = useStickyScroll('playersTable')
-  const [editing,setEditing]=useState(null)
   const [showAdd,setShowAdd]=useState(false)
   const [newPlayer,setNewPlayer]=useState({name:'',role:'DF',rating:7,selected:true})
 
@@ -204,24 +192,18 @@ function PlayersScreen({players, update, remove, add, hideRatings}){
         <button className="btn primary" onClick={()=>setShowAdd(true)}>הוסף שחקן</button>
       </div>
 
-      <div className="tableWrap" ref={wrapRef}>
+      <div style={{maxHeight:'70vh', overflow:'auto'}} ref={wrapRef}>
         <PlayersTable
           players={sorted}
           update={update}
           remove={remove}
           hideRatings={hideRatings}
           showDragHandle={false}
+          sortBy={'name'}
+          dir={'asc'}
+          onSort={()=>{}}
         />
       </div>
-
-      {editing && (
-        <EditLinksModal
-          title={editing.type==='prefer'? 'חייב עם':'לא עם'}
-          value={editing.value}
-          onCancel={()=>setEditing(null)}
-          onSave={(list)=>{ update(editing.id,{ [editing.type]:list }); setEditing(null)}}
-        />
-      )}
 
       {showAdd && (
         <AddPlayerModal
@@ -239,11 +221,10 @@ function PlayersScreen({players, update, remove, add, hideRatings}){
 }
 
 function TeamsScreen({players, update, remove, add, hideRatings, teams, setTeams}){
-  /* מיון/סינון */
+  /* מיון בכותרת */
   const [sortBy,setSortBy]=useState('name')
   const [dir,setDir]=useState('asc')
-  const [showAdd,setShowAdd]=useState(false)
-  const [newPlayer,setNewPlayer]=useState({name:'',role:'DF',rating:7,selected:true})
+
   const tableRef = useStickyScroll('teamsPlayersTable')
   const teamsRef = useStickyScroll('teamsGrid')
 
@@ -260,6 +241,13 @@ function TeamsScreen({players, update, remove, add, hideRatings, teams, setTeams
     return arr
   },[players,sortBy,dir])
 
+  const handleSort = (col)=>{
+    setSortBy(prev=>{
+      if(prev===col){ setDir(d=> d==='asc' ? 'desc' : 'asc'); return prev }
+      setDir('asc'); return col
+    })
+  }
+
   /* DnD */
   const onDragStartRow = (e, pid) => {
     e.dataTransfer.setData('application/json', JSON.stringify({pid, from:'list'}))
@@ -273,12 +261,10 @@ function TeamsScreen({players, update, remove, add, hideRatings, teams, setTeams
     if(!data.pid) return
     setTeams(prev=>{
       const clone = prev.map(t=>[...t])
-      // אם הגיע מרשימה – רק מוסיפים אם לא קיים
       if(!clone[targetIdx].some(p=>String(p.id)===String(data.pid))){
         const obj = players.find(p=>String(p.id)===String(data.pid))
         if(obj) clone[targetIdx].push(obj)
       }
-      // אם הגיע מקבוצה אחרת – נוריד משם
       if(typeof data.from==='number'){
         const i = clone[data.from].findIndex(p=>String(p.id)===String(data.pid))
         if(i>=0) clone[data.from].splice(i,1)
@@ -291,23 +277,47 @@ function TeamsScreen({players, update, remove, add, hideRatings, teams, setTeams
     e.dataTransfer.effectAllowed = 'move'
   }
 
+  /* הוספת שחקן מהמסך */
+  const [showAdd,setShowAdd]=useState(false)
+  const [newPlayer,setNewPlayer]=useState({name:'',role:'DF',rating:7,selected:true})
+
   return (
     <div className="card">
-      {/* טבלת כל השחקנים – בדיוק כמו למעלה, כולל ידית גרירה */}
-      <div className="row" style={{marginBottom:10}}>
-        <button className="btn primary" onClick={()=>setShowAdd(true)}>הוסף שחקן</button>
-        <label>מיון:
-          <select className="mini" value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{marginInlineStart:6}}>
-            <option value="name">שם</option>
-            <option value="role">עמדה</option>
-            <option value="rating">ציון</option>
-            <option value="selected">מסומן</option>
-          </select>
-        </label>
-        <button className="btn" onClick={()=>setDir(d=>d==='asc'?'desc':'asc')}>{dir==='asc'?'⬆️':'⬇️'}</button>
+      {/* קבוצות למעלה */}
+      <div className="teamsTop" ref={teamsRef}>
+        <div className="teamsGrid">
+          {teams.length===0 && <p className="footer-note" style={{gridColumn:'1 / -1'}}>עוד לא נוצרו כוחות. לחץ “עשה כוחות”.</p>}
+          {teams.map((team,idx)=>{
+            const sum = team.reduce((s,p)=>s+Number(p.rating||0),0)
+            const avg = team.length? (sum/team.length).toFixed(2):'—'
+            return (
+              <div key={idx} className="teamCard dropzone"
+                   onDragOver={onDragOver} onDragLeave={onDragLeave}
+                   onDrop={(e)=>dropToTeam(e, idx)}>
+                <div className="teamHeader">
+                  <div className="name">קבוצה {idx+1}</div>
+                  <div className="meta">{avg} ממוצע | {sum.toFixed(1)} ס״כ</div>
+                </div>
+                {team.map((p)=>(
+                  <div key={p.id} className="player-line"
+                       draggable
+                       onDragStart={(e)=>onDragStartFromTeam(e,p.id,idx)}>
+                    <span>• {p.name}</span>
+                    <span className="subtle">{roleName(p.role)} · {p.rating} <span className="handle">⋮⋮</span></span>
+                  </div>
+                ))}
+              </div>
+            )
+          })}
+        </div>
       </div>
 
-      <div className="tableWrap" ref={tableRef}>
+      {/* טבלת כל השחקנים מתחת */}
+      <div className="row" style={{marginTop:8, marginBottom:8}}>
+        <button className="btn primary" onClick={()=>setShowAdd(true)}>הוסף שחקן</button>
+      </div>
+
+      <div className="playersBelow" ref={tableRef}>
         <PlayersTable
           players={sorted}
           update={update}
@@ -315,38 +325,12 @@ function TeamsScreen({players, update, remove, add, hideRatings, teams, setTeams
           hideRatings={hideRatings}
           showDragHandle={true}
           onDragStartRow={onDragStartRow}
+          sortBy={sortBy}
+          dir={dir}
+          onSort={handleSort}
         />
       </div>
 
-      {/* קבוצות – זו לצד זו */}
-      <div className="section-title" style={{marginTop:12}}>קבוצות למחזור</div>
-      <div className="teamsGrid" ref={teamsRef}>
-        {teams.length===0 && <p className="footer-note" style={{gridColumn:'1 / -1'}}>עוד לא נוצרו כוחות. לחץ “עשה כוחות”.</p>}
-        {teams.map((team,idx)=>{
-          const sum = team.reduce((s,p)=>s+Number(p.rating||0),0)
-          const avg = team.length? (sum/team.length).toFixed(2):'—'
-          return (
-            <div key={idx} className="teamCard dropzone"
-                 onDragOver={onDragOver} onDragLeave={onDragLeave}
-                 onDrop={(e)=>dropToTeam(e, idx)}>
-              <div className="teamHeader">
-                <div className="name">קבוצה {idx+1}</div>
-                <div className="meta">{avg} ממוצע | {sum.toFixed(1)} ס״כ</div>
-              </div>
-              {team.map((p,i)=>(
-                <div key={p.id} className="player-line"
-                     draggable
-                     onDragStart={(e)=>onDragStartFromTeam(e,p.id,idx)}>
-                  <span>• {p.name}</span>
-                  <span className="subtle">{roleName(p.role)} · {p.rating} <span className="handle">⋮⋮</span></span>
-                </div>
-              ))}
-            </div>
-          )
-        })}
-      </div>
-
-      {/* הוספת שחקן */}
       {showAdd && (
         <AddPlayerModal
           newPlayer={newPlayer}
@@ -362,19 +346,20 @@ function TeamsScreen({players, update, remove, add, hideRatings, teams, setTeams
   )
 }
 
-/* ===== טבלת שחקנים לשימוש חוזר (עם/בלי ידית גרירה) ===== */
-function PlayersTable({players, update, remove, hideRatings, showDragHandle, onDragStartRow}){
+/* ===== טבלת שחקנים לשימוש חוזר ===== */
+function PlayersTable({players, update, remove, hideRatings, showDragHandle, onDragStartRow, sortBy, dir, onSort}){
+  const Arrow = ({col}) => (sortBy===col ? <span className="arrow">{dir==='asc'?'▲':'▼'}</span> : <span className="arrow" style={{opacity:.3}}>↕</span>)
   return (
     <table className="table">
       <thead>
         <tr>
           <th style={{width:64}}>מחק</th>
-          <th>לא עם</th>
-          <th>חייב עם</th>
-          {!hideRatings && <th style={{width:90}}>ציון</th>}
-          <th style={{width:120}}>עמדה</th>
-          <th>שם</th>
-          <th style={{width:80}}>משחק?</th>
+          <th className="th-sort" onClick={()=>onSort('avoid')}>לא עם <Arrow col="avoid" /></th>
+          <th className="th-sort" onClick={()=>onSort('prefer')}>חייב עם <Arrow col="prefer" /></th>
+          {!hideRatings && <th className="th-sort" style={{width:90}} onClick={()=>onSort('rating')}>ציון <Arrow col="rating" /></th>}
+          <th className="th-sort" style={{width:120}} onClick={()=>onSort('role')}>עמדה <Arrow col="role" /></th>
+          <th className="th-sort" onClick={()=>onSort('name')}>שם <Arrow col="name" /></th>
+          <th className="th-sort" style={{width:80}} onClick={()=>onSort('selected')}>משחק? <Arrow col="selected" /></th>
           {showDragHandle && <th style={{width:36}}></th>}
         </tr>
       </thead>
@@ -382,16 +367,8 @@ function PlayersTable({players, update, remove, hideRatings, showDragHandle, onD
         {players.map(p=> (
           <tr key={p.id}>
             <td><button className="btn danger" onClick={()=>remove(p.id)}>מחק</button></td>
-            <td>
-              <div className="chips">
-                {(p.avoid||[]).map(n=> <span key={n} className="chip hollow">{n}</span>)}
-              </div>
-            </td>
-            <td>
-              <div className="chips">
-                {(p.prefer||[]).map(n=> <span key={n} className="chip">{n}</span>)}
-              </div>
-            </td>
+            <td><div className="chips">{(p.avoid||[]).map(n=> <span key={n} className="chip hollow">{n}</span>)}</div></td>
+            <td><div className="chips">{(p.prefer||[]).map(n=> <span key={n} className="chip">{n}</span>)}</div></td>
             {!hideRatings && (
               <td>
                 <select className="mini" value={p.rating} onChange={e=>update(p.id,{rating:Number(e.target.value)})}>
@@ -437,23 +414,6 @@ function AddPlayerModal({newPlayer,setNewPlayer,onCancel,onSave}){
         <div className="row" style={{marginTop:10}}>
           <button className="btn" onClick={onCancel}>בטל</button>
           <button className="btn primary" onClick={onSave}>שמור</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function EditLinksModal({title,value,onCancel,onSave}){
-  const [val,setVal]=useState(value||'')
-  return (
-    <div className="modal" onClick={onCancel}>
-      <div className="box" onClick={e=>e.stopPropagation()}>
-        <h3>{title}</h3>
-        <p className="footer-note">הפרד שמות בפסיקים, למשל: אבי, דני, רועי</p>
-        <textarea value={val} onChange={e=>setVal(e.target.value)} />
-        <div className="row" style={{marginTop:10}}>
-          <button className="btn" onClick={onCancel}>בטל</button>
-          <button className="btn primary" onClick={()=>onSave(val.split(',').map(s=>s.trim()).filter(Boolean))}>שמור</button>
         </div>
       </div>
     </div>
