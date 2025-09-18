@@ -52,9 +52,13 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,syste
 .modal .box h3{margin:0 0 8px 0}
 .modal .box textarea{width:100%; min-height:120px; background:#102c44; color:#e8eefc; border:1px solid var(--edge); border-radius:10px; padding:10px}
 
-/* גובה רשימת שחקנים – הכי גבוה שאפשר, עם שמירת גלילה */
-.tableWrap{
-  height: calc(100vh - 260px); /* תופס כמעט את כל הגובה (מותאם לסרגלים למעלה) */
-  min-height: 380px;
-  overflow: auto;
-}
+/* גובהי גלילה גדולים + שמירת גלילה */
+.tableWrap{ height: calc(100vh - 260px); min-height: 380px; overflow: auto; }
+.poolWrap{ height: 200px; overflow:auto; border:1px dashed var(--edge); border-radius:12px; padding:8px; background:#0a1b2e; }
+.teamsWrap{ max-height: calc(100vh - 520px); overflow:auto; }
+
+/* DnD */
+.player-pill{display:flex; justify-content:space-between; align-items:center; padding:6px 10px; margin:4px 0; background:#112845; border:1px solid var(--edge); border-radius:10px; cursor:grab}
+.player-pill:active{cursor:grabbing}
+.dropzone{min-height:42px; border:1px dashed transparent; padding:4px; border-radius:10px}
+.dropzone.over{border-color:#2e6bd1; background:#0c2740}
