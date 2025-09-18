@@ -49,7 +49,6 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,syste
 .teamHeader{ display:flex; justify-content:space-between; align-items:center; margin-bottom:6px }
 .teamHeader .name{ color:#a9f0c6; font-weight:800 }
 .teamHeader .meta{ color:#9fb0cb; font-size:12px }
-
 .player-line{ display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px dashed #244362; cursor:grab }
 .player-line:last-child{ border-bottom:none }
 .handle{ opacity:.95; margin-inline-end:8px; cursor:grab; user-select:none } /* ידית מימין לשם */
@@ -77,12 +76,11 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,syste
 .boxRow{display:flex; align-items:center; gap:8px; margin:8px 0}
 .boxRow-label{width:60px; text-align:right; color:#c7d3ea}
 
-/* הדפסה בפועל */
+/* ===== הדפסה בפועל: להדפיס רק את ה-Preview ===== */
 @media print{
-  body{background:#fff; color:#000}
-  .page, .modal{margin:0; padding:0; max-width:none}
-  .controls, .appbar, .tabs{display:none !important}
-  .sheet{background:#fff; border-color:#000}
-  .sheetTable th,.sheetTable td,.box{border-color:#000}
-  .box{background:#fff}
+  @page{ size: A4 portrait; margin: 12mm; }
+  body *{ visibility: hidden !important; }
+  .printModal, .printModal *{ visibility: visible !important; }
+  .printModal{ position: fixed; inset: 0; }
+  .modal .box{ max-height: none; overflow: visible; }
 }
