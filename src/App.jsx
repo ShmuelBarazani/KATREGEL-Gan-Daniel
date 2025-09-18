@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 
-/** App.jsx — גרסה עם:
- * - טאבים: שחקנים / כוחות / דירוג
- * - ייבוא שחקנים (JSON/CSV/הדבקה) + מצב הוספה/החלפה
- * - ייצוא שחקנים לקובץ
- * - שמירה אוטומטית ב-localStorage
+/** App.jsx — תומך בקובץ players.json עם שדות: id, name, r, pos, selected, prefer, avoid
+ *  - טעינה אוטומטית מ־/players.json אם אין נתונים שמורים
+ *  - טעינה ידנית (הוספה/החלפה), ייצוא CSV
+ *  - שמירה אוטומטית ב-localStorage
  */
 
-const LS_KEY = "myTeamsApp_v2";
+const LS_KEY = "myTeamsApp_v4";
 
 function usePersistedState(defaultValue) {
   const [state, setState] = useState(() => {
@@ -22,51 +21,134 @@ function usePersistedState(defaultValue) {
   return [state, setState];
 }
 
+/** נירמול תפקידים */
+const normalizeRole = (val) => {
+  const t = (val ?? "").toString().trim().toLowerCase();
+  if (["gk","ש","שוער"].includes(t)) return "GK";
+  if (["df","ה","הגנה","בלם","מגן"].includes(t)) return "DF";
+  if (["mf","ק","קישור","קשר"].includes(t)) return "MF";
+  if (["fw","ח","התקפה","חלוץ","כנף"].includes(t)) return "FW";
+  return ["GK","DF","MF","FW"].includes((val||"").toString()) ? val : "MF";
+};
+
+/** פרסור קלט כללי: JSON (תומך גם pos/r) או CSV/שורות */
+const parsePlayersText = (text) => {
+  text = (text || "").trim();
+  if (!text) return [];
+  // JSON
+  try {
+    const obj = JSON.parse(text);
+    if (Array.isArray(obj)) {
+      return obj.map(x => ({
+        id: x.id ?? undefined,
+        name: x.name ?? x.שם,
+        role: normalizeRole(x.role ?? x.תפקיד ?? x.pos),
+        rating: Number(x.rating ?? x.ציון ?? x.r),
+        selected: Boolean(x.selected),
+        prefer: Array.isArray(x.prefer) ? x.prefer.map(String) : [],
+        avoid: Array.isArray(x.avoid) ? x.avoid.map(String) : [],
+      })).filter(x => x.name && !Number.isNaN(x.rating));
+    }
+  } catch {}
+  // CSV/שורות: שם,תפקיד,ציון וכד'
+  const rows = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const out = [];
+  for (const r of rows) {
+    const parts = r.split(/[\t,;|]/).map(s=>s.trim()).filter(Boolean);
+    if (parts.length===1) out.push({ name: parts[0], role:"MF", rating:7 });
+    else {
+      const [nm, rl, rt] = parts;
+      out.push({ name:nm, role: normalizeRole(rl), rating: Number(rt||7) });
+    }
+  }
+  return out.filter(x=>x.name);
+};
+
 export default function App() {
   const [data, setData] = usePersistedState({ players: [], sessions: [] });
   const [tab, setTab] = useState("players");
 
-  // טופס הוספת שחקן
+  // טופס ידני
   const [name, setName] = useState("");
   const [role, setRole] = useState("GK");
+  const ratingOptions = useMemo(() => Array.from({length:19}, (_,i)=> (1 + i*0.5)), []);
   const [rating, setRating] = useState("");
 
   // כוחות
   const [teams, setTeams] = useState([]);
-  const playersById = useMemo(() => new Map(data.players.map(p => [p.id, p])), [data.players]);
+
+  const playersById = useMemo(
+    () => new Map(data.players.map(p => [String(p.id), p])),
+    [data.players]
+  );
+
   const ranking = useMemo(() =>
     [...data.players]
       .map(p => ({ name: p.name, points: Math.round(Number(p.rating) * 10) }))
-      .sort((a,b)=>b.points-a.points), [data.players]);
+      .sort((a,b)=>b.points-a.points),
+    [data.players]
+  );
 
-  const newId = () => Math.random().toString(36).slice(2) + "-" + Date.now().toString(36);
+  const randomId = () => Math.random().toString(36).slice(2) + "-" + Date.now().toString(36);
 
-  /** ---------- שחקנים בסיסי ---------- */
+  /** טעינה אוטומטית מה-public/players.json (אם אין נתונים עד כה) */
+  useEffect(() => {
+    (async () => {
+      if (data.players.length > 0) return;
+      try {
+        const res = await fetch("/players.json", { cache: "no-store" });
+        if (!res.ok) return;
+        const text = await res.text();
+        const parsed = parsePlayersText(text);
+        if (parsed.length) {
+          const mapped = parsed.map(p => ({
+            id: p.id !== undefined ? String(p.id) : randomId(),
+            name: p.name,
+            role: p.role,
+            rating: Number(p.rating ?? 7),
+            selected: Boolean(p.selected),
+            prefer: p.prefer ?? [],
+            avoid: p.avoid ?? [],
+          }));
+          setData(prev => ({ ...prev, players: mapped }));
+        }
+      } catch {}
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** פעולות על שחקנים */
   const addPlayer = () => {
     if (!name.trim() || !rating) { alert("מלא שם וציון"); return; }
     setData(prev => ({
       ...prev,
-      players: [...prev.players, { id:newId(), name:name.trim(), role, rating:Number(rating) }]
+      players: [...prev.players, {
+        id: randomId(), name: name.trim(), role, rating: Number(rating), selected: true, prefer: [], avoid: []
+      }]
     }));
     setName(""); setRating("");
   };
   const removePlayer = (id) => {
     if (!confirm("למחוק את השחקן?")) return;
-    setData(prev => ({ ...prev, players: prev.players.filter(p=>p.id!==id) }));
-    setTeams(t => t.map(team => team.filter(pid => pid!==id)));
+    setData(prev => ({ ...prev, players: prev.players.filter(p=>String(p.id)!==String(id)) }));
+    setTeams(t => t.map(team => team.filter(pid => String(pid)!==String(id))));
   };
   const updatePlayer = (id, fields) => {
-    setData(prev => ({ ...prev, players: prev.players.map(p => p.id===id?{...p,...fields}:p) }));
+    setData(prev => ({
+      ...prev,
+      players: prev.players.map(p => String(p.id)===String(id) ? { ...p, ...fields } : p)
+    }));
   };
 
-  /** ---------- כוחות ---------- */
+  /** כוחות — אם יש נבחרים (selected=true) נשתמש רק בהם */
   const makeTeams = (numTeams=2) => {
-    if (data.players.length < numTeams) { alert(`צריך לפחות ${numTeams} שחקנים`); return; }
-    const sorted = [...data.players].sort((a,b)=>Number(b.rating)-Number(a.rating));
+    const pool = data.players.some(p=>p.selected) ? data.players.filter(p=>p.selected) : data.players;
+    if (pool.length < numTeams) { alert(`צריך לפחות ${numTeams} שחקנים במאגר הנוכחי`); return; }
+    const sorted = [...pool].sort((a,b)=>Number(b.rating)-Number(a.rating));
     const out = Array.from({length:numTeams}, ()=>[]);
     let idx = 0, dir = 1;
     for (const p of sorted){
-      out[idx].push(p.id);
+      out[idx].push(String(p.id));
       idx += dir;
       if (idx===numTeams){ idx=numTeams-1; dir=-1; }
       else if (idx<0){ idx=0; dir=1; }
@@ -75,68 +157,40 @@ export default function App() {
   };
   const clearTeams = () => setTeams([]);
 
-  /** ---------- ייבוא/ייצוא שחקנים ---------- */
-
-  // ממפה טקסט תפקידים → קודים
-  const normalizeRole = (val) => {
-    const t = (val||"").toString().trim().toLowerCase();
-    if (["gk","ש","שוער"].includes(t)) return "GK";
-    if (["df","ה","הגנה","בלם","מגן"].includes(t)) return "DF";
-    if (["mf","ק","קישור","קשר"].includes(t)) return "MF";
-    if (["fw","ח","התקפה","חלוץ","כנף"].includes(t)) return "FW";
-    return "MF";
-  };
-
-  // פרסור גמיש: JSON או CSV/טקסט
-  const parsePlayersText = (text) => {
-    text = text.trim();
-    if (!text) return [];
-    // JSON
-    try {
-      const obj = JSON.parse(text);
-      if (Array.isArray(obj)) {
-        return obj
-          .map(x => ({ name:x.name||x.שם, role: normalizeRole(x.role||x.תפקיד), rating: Number(x.rating||x.ציון) }))
-          .filter(x => x.name && x.rating);
-      }
-    } catch {}
-    // CSV/שורות: שם,תפקיד,ציון  או  שם;תפקיד;ציון  או  שם|תפקיד|ציון  או  שם<tab>תפקיד<tab>ציון
-    const rows = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-    const out = [];
-    for (const r of rows){
-      const parts = r.split(/[\t,;|]/).map(s=>s.trim()).filter(Boolean);
-      if (parts.length===1){ // רק שם
-        out.push({ name: parts[0], role:"MF", rating:7 });
-      } else {
-        const [nm, rl, rt] = parts;
-        out.push({ name:nm, role: normalizeRole(rl), rating: Number(rt||7) });
-      }
-    }
-    return out.filter(x=>x.name);
-  };
-
+  /** ייבוא/ייצוא */
   const importPlayers = async ({mode, fromFile, pastedText}) => {
     let text = pastedText || "";
-    if (fromFile) {
-      text = await fromFile.text();
-    }
+    if (fromFile) text = await fromFile.text();
     const parsed = parsePlayersText(text);
     if (!parsed.length){ alert("לא זוהו שחקנים בקלט"); return; }
 
     if (mode === "replace") {
-      const mapped = parsed.map(p => ({ id:newId(), name:p.name, role:p.role, rating:Number(p.rating||7) }));
+      const mapped = parsed.map(p => ({
+        id: p.id !== undefined ? String(p.id) : randomId(),
+        name: p.name, role: p.role,
+        rating: Number(p.rating ?? 7),
+        selected: Boolean(p.selected),
+        prefer: p.prefer ?? [],
+        avoid: p.avoid ?? [],
+      }));
       setData(prev => ({ ...prev, players: mapped }));
       setTeams([]);
       alert(`נטענו ${mapped.length} שחקנים (החלפה מלאה).`);
     } else {
-      // add / merge
       setData(prev => {
-        const namesSet = new Set(prev.players.map(p => p.name+"|"+p.role));
+        const existingKeys = new Set(prev.players.map(p => (p.name+"|"+p.role)));
         const toAdd = [];
         for (const p of parsed){
-          const key = p.name+"|"+p.role;
-          if (!namesSet.has(key)){
-            toAdd.push({ id:newId(), name:p.name, role:p.role, rating:Number(p.rating||7) });
+          const key = (p.name+"|"+p.role);
+          if (!existingKeys.has(key)){
+            toAdd.push({
+              id: p.id !== undefined ? String(p.id) : randomId(),
+              name: p.name, role: p.role,
+              rating: Number(p.rating ?? 7),
+              selected: Boolean(p.selected),
+              prefer: p.prefer ?? [],
+              avoid: p.avoid ?? [],
+            });
           }
         }
         return { ...prev, players: [...prev.players, ...toAdd] };
@@ -145,18 +199,26 @@ export default function App() {
     }
   };
 
+  const importFromPublicJson = (mode="add") =>
+    fetch("/players.json",{cache:"no-store"})
+      .then(r=>r.ok?r.text():Promise.reject())
+      .then(txt=>importPlayers({mode, pastedText: txt}))
+      .catch(()=>alert("לא נמצא players.json ב-public"));
+
   const exportPlayers = () => {
-    const rows = [["name","role","rating"], ...data.players.map(p=>[p.name,p.role,p.rating])];
+    const rows = [["id","name","pos","r","selected","prefer","avoid"]];
+    for (const p of data.players) rows.push([
+      p.id, p.name, p.role, p.rating, Boolean(p.selected),
+      JSON.stringify(p.prefer||[]), JSON.stringify(p.avoid||[])
+    ]);
     const csv = rows.map(r=>r.map(x=>String(x).replace(/"/g,'""')).map(x=>`"${x}"`).join(",")).join("\n");
     const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "players.csv";
-    a.click();
+    const a = document.createElement("a"); a.href = url; a.download = "players.csv"; a.click();
     URL.revokeObjectURL(url);
   };
 
-  /** ---------- UI קטנים ---------- */
+  /** UI קטנים */
   const Field = ({label, children}) => (
     <label style={{display:"grid", gap:6}}>
       <span className="muted" style={{paddingInlineStart:2}}>{label}</span>
@@ -170,18 +232,16 @@ export default function App() {
     </div>
   );
 
-  /** ---------- טאבים ---------- */
+  /** טאבים */
   const PlayersTab = () => {
     const [pasteText, setPasteText] = useState("");
-    const fileRef = useState(null)[0];
 
-    const handleFile = (e, mode) => {
+    const handleFile = async (e, mode) => {
       const f = e.target.files?.[0];
       if (!f) return;
-      importPlayers({ mode, fromFile: f });
+      await importPlayers({ mode, fromFile: f });
       e.target.value = "";
     };
-    const handlePasteImport = (mode) => importPlayers({ mode, pastedText: pasteText });
 
     return (
       <div className="grid">
@@ -198,10 +258,10 @@ export default function App() {
                 <option value="FW">התקפה</option>
               </select>
             </Field>
-            <Field label="ציון">
+            <Field label="ציון (1–10)">
               <select value={rating} onChange={e=>setRating(e.target.value)} style={{minWidth:120}}>
                 <option value="" disabled>בחר</option>
-                {[5,5.5,6,6.5,7,7.5,8,8.5,9,9.5,10].map(n=><option key={n} value={n}>{n}</option>)}
+                {ratingOptions.map(n=><option key={n} value={n}>{n}</option>)}
               </select>
             </Field>
             <button className="btn-primary" onClick={addPlayer}>הוסף</button>
@@ -210,36 +270,42 @@ export default function App() {
 
         <Card title="ייבוא/ייצוא שחקנים">
           <div className="row">
-            <span className="badge">קבצים נתמכים: JSON / CSV / TXT</span>
             <button onClick={exportPlayers}>ייצוא CSV</button>
+            <span className="muted">נתמך: JSON / CSV / הדבקה</span>
           </div>
           <hr/>
-          <div className="row">
-            <Field label="ייבוא מקובץ">
+          <div className="row" style={{alignItems:"stretch"}}>
+            <Field label="ייבוא מקובץ (הוספה)">
               <input type="file" accept=".json,.csv,.txt" onChange={(e)=>handleFile(e,"add")} />
             </Field>
-            <button onClick={()=>fileRef?.click} style={{display:"none"}}>בחר קובץ</button>
-            <button onClick={(e)=>{const inp=e.target.previousElementSibling?.querySelector('input'); inp?.click();}} style={{display:"none"}} />
-            <button onClick={()=>alert("בחר קובץ ולמטה תוכל גם 'החלפה מלאה'")}>?</button>
-            <span className="muted">ברירת מחדל: הוספה (מתעלם מכפילויות לפי שם+תפקיד)</span>
-            <button onClick={(e)=>{
-              const input = e.currentTarget.parentElement.querySelector('input[type=file]');
-              input.onchange = (ev)=>handleFile(ev,"replace");
-              input.click();
-            }}>ייבוא "החלפה מלאה"</button>
+            <Field label="ייבוא מקובץ (החלפה מלאה)">
+              <input type="file" accept=".json,.csv,.txt" onChange={(e)=>handleFile(e,"replace")} />
+            </Field>
           </div>
+
+          <div className="row">
+            <Field label="ייבוא מה-public/players.json">
+              <div className="row">
+                <button className="btn-primary" onClick={()=>importFromPublicJson("add")}>טען (הוספה)</button>
+                <button onClick={()=>importFromPublicJson("replace")}>טען (החלפה מלאה)</button>
+                <span className="muted">שים/עדכן את הקובץ ב־public/players.json</span>
+              </div>
+            </Field>
+          </div>
+
           <div className="row" style={{alignItems:"stretch"}}>
-            <Field label="או הדבקה חופשית (שם, תפקיד, ציון בכל שורה)">
-              <textarea rows={5} placeholder={`דוגמאות:
-Lionel Messi, FW, 9.5
-איתן לוי; הגנה; 7.5
-{"name":"אבי","role":"MF","rating":8}
-[{"name":"דני","role":"FW","rating":8.5}]`} value={pasteText} onChange={e=>setPasteText(e.target.value)} />
+            <Field label="או הדבקה חופשית (JSON או שם,תפקיד,ציון בשורה)">
+              <textarea rows={5}
+                placeholder={`דוגמאות:
+{"id":41,"name":"שמוליק","pos":"FW","r":4.5,"selected":true}
+מאור כהן, קישור, 7.5`}
+                onChange={e=>setPasteText(e.target.value)}
+              />
             </Field>
           </div>
           <div className="row">
-            <button onClick={()=>handlePasteImport("add")} className="btn-primary">ייבוא מהדבקה (הוספה)</button>
-            <button onClick={()=>handlePasteImport("replace")}>ייבוא מהדבקה (החלפה מלאה)</button>
+            <button className="btn-primary" onClick={()=>importPlayers({mode:"add", pastedText: pasteText})}>ייבוא מהדבקה (הוספה)</button>
+            <button onClick={()=>importPlayers({mode:"replace", pastedText: pasteText})}>ייבוא מהדבקה (החלפה מלאה)</button>
           </div>
         </Card>
 
@@ -249,11 +315,14 @@ Lionel Messi, FW, 9.5
           ) : (
             <table className="table">
               <thead>
-                <tr><th>שם</th><th>תפקיד</th><th>ציון</th><th></th></tr>
+                <tr><th>פעיל</th><th>שם</th><th>תפקיד</th><th>ציון</th><th></th></tr>
               </thead>
               <tbody>
                 {[...data.players].sort((a,b)=>a.name.localeCompare(b.name,"he")).map(p=>(
                   <tr key={p.id}>
+                    <td>
+                      <input type="checkbox" checked={!!p.selected} onChange={e=>updatePlayer(p.id,{selected:e.target.checked})} />
+                    </td>
                     <td>{p.name}</td>
                     <td>
                       <select value={p.role} onChange={e=>updatePlayer(p.id,{role:e.target.value})}>
@@ -265,7 +334,7 @@ Lionel Messi, FW, 9.5
                     </td>
                     <td>
                       <select value={p.rating} onChange={e=>updatePlayer(p.id,{rating:Number(e.target.value)})}>
-                        {[5,5.5,6,6.5,7,7.5,8,8.5,9,9.5,10].map(n=><option key={n} value={n}>{n}</option>)}
+                        {ratingOptions.map(n=><option key={n} value={n}>{n}</option>)}
                       </select>
                     </td>
                     <td><button onClick={()=>removePlayer(p.id)}>מחק</button></td>
@@ -274,6 +343,7 @@ Lionel Messi, FW, 9.5
               </tbody>
             </table>
           )}
+          <p className="muted" style={{marginTop:8}}>אם יש שחקנים מסומנים "פעיל" – בניית הכוחות תשתמש רק בהם.</p>
         </Card>
       </div>
     );
@@ -288,14 +358,14 @@ Lionel Messi, FW, 9.5
           <button onClick={()=>makeTeams(4)}>בנה 4 כוחות</button>
           <button onClick={clearTeams}>נקה</button>
         </div>
-        <p className="muted">חלוקה על פי ציון ממוצע לסירוגין (מאזן רמות בסיסי).</p>
+        <p className="muted">חלוקה מאזנת לפי ציון (גבוה→נמוך לסירוגין). אם יש נבחרים — משתמש רק בהם.</p>
       </Card>
 
       {teams.length===0 ? (
         <Card><p className="muted">אין כוחות כרגע.</p></Card>
       ) : (
         teams.map((team,i)=>{
-          const list = team.map(id=>playersById.get(id)).filter(Boolean);
+          const list = team.map(id=>playersById.get(String(id))).filter(Boolean);
           const avg = list.length? (list.reduce((s,p)=>s+Number(p.rating),0)/list.length).toFixed(2):"0.00";
           return (
             <Card key={i} title={`קבוצה ${i+1} · ממוצע ${avg}`}>
@@ -338,7 +408,7 @@ Lionel Messi, FW, 9.5
   return (
     <div className="page">
       <h1>my-teams-app</h1>
-      <div className="muted">תצוגה מעודכנת · ירוק־כהה · RTL · שמירה אוטומטית</div>
+      <div className="muted">תומך בקובץ players.json (pos/r/selected) · RTL · שמירה אוטומטית</div>
 
       <div className="row" style={{marginTop:14, marginBottom:12}}>
         <button className={`tab-btn ${tab==="players"?"active":""}`} onClick={()=>setTab("players")}>שחקנים</button>
