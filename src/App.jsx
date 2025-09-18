@@ -1,10 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-/* ===== קבועים וכלי עזר ===== */
-const LS_KEY = 'katregel_state_v10'
+/* ===== קבועים ===== */
+const LS_KEY = 'katregel_state_v11'
 const POS = [['GK','שוער'],['DF','הגנה'],['MF','קישור'],['FW','התקפה']]
-const RATING_STEPS = Array.from({length:19}, (_,i)=>1+i*0.5) // 1..10
-
+const RATING_STEPS = Array.from({length:19}, (_,i)=>1+i*0.5)
 const uid = ()=>Math.random().toString(36).slice(2)+'-'+Date.now().toString(36)
 const roleName = c=>({GK:'שוער',DF:'הגנה',MF:'קישור',FW:'התקפה'}[c]||c)
 const normRole=v=>{const t=(v||'').toString().trim().toLowerCase(); if(['gk','ש','שוער'].includes(t))return'GK'; if(['df','ה','הגנה','בלם','מגן'].includes(t))return'DF'; if(['mf','ק','קישור','קשר'].includes(t))return'MF'; if(['fw','ח','התקפה','חלוץ','כנף'].includes(t))return'FW'; return ['GK','DF','MF','FW'].includes(v)?v:'MF'}
@@ -12,7 +11,7 @@ const sum = a=>a.reduce((s,x)=>s+Number(x||0),0)
 const avg = a=>a.length?sum(a)/a.length:0
 const sortDescRating = a=>a.sort((x,y)=>Number(y.rating||0)-Number(x.rating||0))
 
-/* שומר מיקום גלילה */
+/* שמירת מיקום גלילה */
 function useStickyScroll(key){
   const ref = useRef(null)
   useLayoutEffect(()=>{
@@ -69,12 +68,12 @@ const violatesAvoid=(team,p)=> team.some(x=>x.avoid?.includes(p.name) || p.avoid
 const preferSatisfied=(team,p)=> p.prefer?.length? team.some(x=>p.prefer.includes(x.name)):true
 const validTeam=t=> t.every((p,i)=>!violatesAvoid(t.filter((_,j)=>j!==i),p) && (!p.prefer?.length || preferSatisfied(t.filter((_,j)=>j!==i),p)))
 
-/* ===== יצירת כוחות מאוזנים (עם איזון אגרסיבי) ===== */
+/* ===== חלוקת כוחות עם יעד ממוצע משותף ===== */
 function buildTeamsBalanced(players, k){
   const pool=players.filter(p=>p.selected)
   const maxPer=Math.ceil(pool.length/k), minPer=Math.floor(pool.length/k)
-  const teams=Array.from({length:k},()=>({list:[],sum:0}))
-  const target=sum(pool.map(p=>p.rating))/k
+  const teams=Array.from({length:k},()=>({list:[]}))
+  const target=sum(pool.map(p=>p.rating))/k   // ממוצע קבוצות יעד (משותף לכולן)
 
   // התחלה גרידית עם אילוצים
   const sorted=[...pool].sort((a,b)=>(b.rating+Math.random()*0.1)-(a.rating+Math.random()*0.1))
@@ -84,31 +83,34 @@ function buildTeamsBalanced(players, k){
       const t=teams[i]; if(t.list.length>=maxPer) continue
       if(violatesAvoid(t.list,p)) continue
       const okPrefer=preferSatisfied(t.list,p)
-      const newAvg=(t.sum+p.rating)/(t.list.length+1)
+      const newAvg=(avg(t.list.map(x=>x.rating).concat(p.rating))||0)
       const score = Math.abs(newAvg-target) + (okPrefer?0:1000)
       if(score<bestScore){bestScore=score; best=i}
     }
-    if(best<0){ // fallback
+    if(best<0){
       let i=teams.findIndex(t=>t.list.length<maxPer); if(i<0) i=0
-      teams[i].list.push(p); teams[i].sum+=p.rating
+      teams[i].list.push(p)
     }else{
-      teams[best].list.push(p); teams[best].sum+=p.rating
+      teams[best].list.push(p)
     }
   }
 
-  // איזון לוקאלי: העברות/החלפות עד פער קטן
+  // איזון לוקאלי – מקטין את |avg_i - target| ואת הפער בין קבוצות
   const T=teams.map(t=>({list:[...t.list]}))
-  const objective=(TT)=>{const A=TT.map(t=>avg(t.list.map(p=>p.rating))||target); return (Math.max(...A)-Math.min(...A))*100 + A.reduce((s,a)=>s+(a-target)**2,0)}
+  const objective=(TT)=>{
+    const A=TT.map(t=>avg(t.list.map(p=>p.rating))||target)
+    const spread = Math.max(...A)-Math.min(...A)
+    const toTarget = A.reduce((s,a)=>s+Math.abs(a-target),0)
+    return spread*100 + toTarget
+  }
   let bestObj=objective(T), stale=0
-  for(let it=0; it<6000 && stale<500; it++){
-    // מצא קבוצה גבוהה ונמוכה
+  for(let it=0; it<7000 && stale<600; it++){
     const means=T.map(t=>avg(t.list.map(p=>p.rating))||target)
     const hi=means.indexOf(Math.max(...means))
     const lo=means.indexOf(Math.min(...means))
     if(hi===lo) break
     let improved=false
 
-    // נסה להעביר מהגבוה לנמוך
     for(const pa of [...T[hi].list]){
       const A=[...T[hi].list].filter(x=>x!==pa), B=[...T[lo].list,pa]
       if(A.length<minPer || B.length>maxPer) continue
@@ -117,8 +119,6 @@ function buildTeamsBalanced(players, k){
       const obj=objective(TT)
       if(obj+1e-9<bestObj){ T[hi].list=A; T[lo].list=B; bestObj=obj; improved=true; break }
     }
-
-    // אם לא שופר – נסה החלפה
     if(!improved){
       let bestSwap=null, bestVal=Infinity
       for(const pa of T[hi].list){
@@ -130,7 +130,7 @@ function buildTeamsBalanced(players, k){
             if(!validTeam(A)||!validTeam(B)) continue
             const TT=T.map((t,i)=>({list:i===hi?A:i===j?B:t.list}))
             const obj=objective(TT)
-            if(obj<bestVal){bestVal=obj; bestSwap={j, A, B}}
+            if(obj<bestVal){bestVal=obj; bestSwap={j,A,B}}
           }
         }
       }
@@ -138,21 +138,19 @@ function buildTeamsBalanced(players, k){
     }
     stale = improved?0:stale+1
   }
-
   return T.map(t=>sortDescRating(t.list))
 }
 
 /* ===== APP ===== */
 export default function App(){
   const [store,setStore]=useStore()
-  const [tab,setTab]=useState('teams') // 'teams' | 'players' | 'rank'
+  const [tab,setTab]=useState('teams')         // 'teams' | 'players' | 'rank'
   const [teams,setTeams]=useState([])
   const [numTeams,setNumTeams]=useState(4)
   const [hideTeamRatings,setHideTeamRatings]=useState(false)
   const [printOpen,setPrintOpen]=useState(false)
   const [resultsOpen,setResultsOpen]=useState(false)
 
-  // טעינת players.json ראשונית
   useEffect(()=>{(async()=>{
     if(store.players.length>0) return
     try{
@@ -165,6 +163,7 @@ export default function App(){
   })()},[])
 
   const selectedCount=useMemo(()=>store.players.filter(p=>p.selected).length,[store.players])
+  const globalTarget=useMemo(()=>{const arr=store.players.filter(p=>p.selected).map(p=>p.rating); return arr.length? (sum(arr)/numTeams) / (arr.length/numTeams) : 0},[store.players,numTeams]) // זה בעצם הממוצע המשותף
 
   /* CRUD */
   const addPlayer=p=>setStore(s=>({...s,players:[...s.players,{id:uid(),selected:true,prefer:[],avoid:[],...p}]}))
@@ -173,9 +172,10 @@ export default function App(){
 
   /* Teams actions */
   const makeTeams=()=>{const t=buildTeamsBalanced(store.players,numTeams); setTeams(t); setTab('teams')}
-  const clearTeams=()=>setTeams([])
+  const resetTeams=()=>setTeams([])  // אפס מחזור
 
-  /* הקפדה על מיון פנימי לפי ציון יורד */
+  const openFixSession=()=>{ if(teams.length===0) return alert('עוד לא נוצרו קבוצות.'); setResultsOpen(true) } // קבע מחזור
+
   const setTeamsSorted=updater=>{
     setTeams(prev=>{
       const next=typeof updater==='function'?updater(prev):updater
@@ -203,10 +203,10 @@ export default function App(){
         <div className="switch">
           <input type="checkbox" checked={hideTeamRatings} onChange={e=>setHideTeamRatings(e.target.checked)}/> הסתר ציונים (בקבוצות)
         </div>
-        <button className="btn" onClick={clearTeams}>קבע מחזור</button>
         <button className="btn primary" onClick={makeTeams}>עשה כוחות</button>
+        <button className="btn" onClick={openFixSession}>קבע מחזור</button>
+        <button className="btn danger" onClick={resetTeams}>אפס מחזור</button>
         <span className="badge">מסומנים: {selectedCount}</span>
-        <button className="btn" onClick={()=>setResultsOpen(true)}>תוצאות המחזור</button>
         <button className="btn" onClick={()=>setPrintOpen(true)}>תצוגת הדפסה / יצוא PDF</button>
       </div>
 
@@ -219,16 +219,12 @@ export default function App(){
           teams={teams}
           setTeamsSorted={setTeamsSorted}
           hideTeamRatings={hideTeamRatings}
+          targetAvg={store.players.filter(p=>p.selected).length ? (sum(store.players.filter(p=>p.selected).map(p=>p.rating)) / (store.players.filter(p=>p.selected).length/numTeams)).toFixed(2) : '—'}
         />
       )}
 
       {tab==='players' && (
-        <PlayersScreen
-          players={store.players}
-          update={updatePlayer}
-          remove={removePlayer}
-          add={addPlayer}
-        />
+        <PlayersScreen players={store.players} update={updatePlayer} remove={removePlayer} add={addPlayer}/>
       )}
 
       {tab==='rank' && (
@@ -247,7 +243,7 @@ export default function App(){
   )
 }
 
-/* ===== מסכי משנה ===== */
+/* ===== מסכי משנה (ללא שינוי חזותי גדול, רק תוספת יעד) ===== */
 
 function PlayersScreen({players, update, remove, add}){
   const wrapRef = useStickyScroll('playersTable')
@@ -290,7 +286,7 @@ function PlayersScreen({players, update, remove, add}){
   )
 }
 
-function TeamsScreen({players, update, remove, add, teams, setTeamsSorted, hideTeamRatings}){
+function TeamsScreen({players, update, remove, add, teams, setTeamsSorted, hideTeamRatings, targetAvg}){
   const [sortBy,setSortBy]=useState('name')
   const [dir,setDir]=useState('asc')
   const tableRef=useStickyScroll('teamsPlayersTable')
@@ -310,7 +306,6 @@ function TeamsScreen({players, update, remove, add, teams, setTeamsSorted, hideT
   },[players,sortBy,dir])
   const handleSort=col=>setSortBy(p=>{if(p===col){setDir(d=>d==='asc'?'desc':'asc');return p} setDir('asc');return col})
 
-  /* DnD – העברה (לא שכפול) */
   const onDragStartRow=(e,pid)=>{ e.dataTransfer.setData('application/json', JSON.stringify({pid,from:'list'})); e.dataTransfer.effectAllowed='move' }
   const onDragOver=e=>{ e.preventDefault(); e.currentTarget.classList.add('over') }
   const onDragLeave=e=>{ e.currentTarget.classList.remove('over') }
@@ -319,12 +314,10 @@ function TeamsScreen({players, update, remove, add, teams, setTeamsSorted, hideT
     const data=JSON.parse(e.dataTransfer.getData('application/json')||'{}'); if(!data.pid) return
     setTeamsSorted(prev=>{
       const clone=prev.map(t=>[...t])
-      // הסר מכל קבוצה אחרת – כדי שלא יהיה כפילויות
       for(let i=0;i<clone.length;i++){
         const j=clone[i].findIndex(p=>String(p.id)===String(data.pid))
         if(j>=0) clone[i].splice(j,1)
       }
-      // הוסף לקבוצת היעד
       if(!clone[targetIdx].some(p=>String(p.id)===String(data.pid))){
         const obj=players.find(p=>String(p.id)===String(data.pid))
         if(obj) clone[targetIdx].push(obj)
@@ -339,17 +332,20 @@ function TeamsScreen({players, update, remove, add, teams, setTeamsSorted, hideT
 
   return (
     <div className="card">
-      {/* קבוצות למעלה */}
       <div className="teamsTop" ref={teamsRef}>
         <div className="teamsGrid">
           {teams.length===0 && <p className="footer-note" style={{gridColumn:'1/-1'}}>עוד לא נוצרו כוחות. לחץ “עשה כוחות”.</p>}
           {teams.map((team,idx)=>{
-            const ratings=team.map(p=>p.rating); const s=sum(ratings); const a=ratings.length?(s/ratings.length).toFixed(2):'—'
+            const avgNow = team.length? (avg(team.map(p=>p.rating))).toFixed(2) : '—'
+            const diff = (parseFloat(avgNow)||0) - (parseFloat(targetAvg)||0)
+            const warn = Math.abs(diff) > 0.05
             return (
               <div key={idx} className="teamCard dropzone" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={(e)=>dropToTeam(e,idx)}>
                 <div className="teamHeader">
                   <div className="name">קבוצה {idx+1}</div>
-                  <div className="meta">{a} ממוצע | {s.toFixed(1)} ס״כ</div>
+                  <div className="meta">
+                    יעד {targetAvg} | בפועל {avgNow} {warn && <span style={{color:'#ff9f7a'}}>({diff>0?'+':''}{diff.toFixed(2)})</span>}
+                  </div>
                 </div>
                 {team.map((p)=>(
                   <div key={p.id} className="player-line" draggable onDragStart={(e)=>onDragStartFromTeam(e,p.id,idx)}>
@@ -363,7 +359,6 @@ function TeamsScreen({players, update, remove, add, teams, setTeamsSorted, hideT
         </div>
       </div>
 
-      {/* רשימת השחקנים */}
       <div className="row" style={{marginTop:8, marginBottom:8}}>
         <button className="btn primary" onClick={()=>setShowAdd(true)}>הוסף שחקן</button>
       </div>
@@ -428,7 +423,7 @@ function PlayersTable({players, update, remove, hideRatings, showDragHandle, onD
   )
 }
 
-/* מודלי הוספת שחקן */
+/* מודלי הוספת שחקן / תוצאות מחזור / דירוג – כמו בגרסה הקודמת (ללא שינוי מהותי) */
 function AddPlayerModal({newPlayer,setNewPlayer,onCancel,onSave}){
   return (
     <div className="modal" onClick={onCancel}>
@@ -453,27 +448,17 @@ function AddPlayerModal({newPlayer,setNewPlayer,onCancel,onSave}){
   )
 }
 
-/* מודל הזנת תוצאות מחזור */
 function ResultsModal({teams,onClose,onSave}){
   const [data,setData]=useState(()=> teams.map(()=>({result:'D', goals:{}})))
   const setGoal=(ti,pid,val)=>setData(d=>d.map((t,i)=> i!==ti? t : ({...t,goals:{...t.goals,[pid]:Math.max(0,parseInt(val||'0',10)||0)}})))
   const setRes =(ti,val)=>setData(d=>d.map((t,i)=> i!==ti? t : ({...t,result:val})))
-  const playersCount = teams.reduce((s,t)=>s+t.length,0)
-  const disabled = !playersCount
-
   const save=()=>{
     const stamp=new Date().toISOString()
-    const session={
-      id: uid(),
-      date: stamp,
-      teams: teams.map((t,i)=>({
-        result: data[i]?.result || 'D',
-        players: t.map(p=>({id:p.id, name:p.name, goals: Number(data[i]?.goals?.[p.id]||0)}))
-      }))
-    }
+    const session={ id: uid(), date: stamp,
+      teams: teams.map((t,i)=>({ result: data[i]?.result||'D',
+        players: t.map(p=>({id:p.id, name:p.name, goals: Number(data[i]?.goals?.[p.id]||0)})) })) }
     onSave(session); onClose()
   }
-
   return (
     <div className="modal" onClick={onClose}>
       <div className="box" onClick={e=>e.stopPropagation()}>
@@ -506,54 +491,42 @@ function ResultsModal({teams,onClose,onSave}){
         </div>}
         <div className="row" style={{marginTop:10}}>
           <button className="btn" onClick={onClose}>סגור</button>
-          <button className="btn primary" disabled={disabled} onClick={save}>שמור מחזור</button>
+          <button className="btn primary" onClick={save}>שמור מחזור</button>
         </div>
       </div>
     </div>
   )
 }
 
-/* מסך דירוג */
 function RankScreen({players,sessions}){
   const [withBonus,setWithBonus]=useState(true)
   const [month,setMonth]=useState(new Date().getMonth()+1)
   const [year,setYear]=useState(new Date().getFullYear())
 
-  const filtered = useMemo(()=>{
-    return sessions.filter(s=>{
-      const d=new Date(s.date); return d.getFullYear()===year && (d.getMonth()+1)===month
-    })
-  },[sessions,month,year])
+  const filtered = useMemo(()=>sessions.filter(s=>{
+    const d=new Date(s.date); return d.getFullYear()===year && (d.getMonth()+1)===month
+  }),[sessions,month,year])
 
-  // טבלאות: מלך השערים (חודשי/שנתי), אליפות החודש
   const byGoalsMonthly = useMemo(()=>{
     const map=new Map()
-    for(const s of filtered){
-      for(const t of s.teams){
-        for(const pl of t.players){
-          map.set(pl.name,(map.get(pl.name)||0)+Number(pl.goals||0))
-        }
-      }
-    }
+    for(const s of filtered){ for(const t of s.teams){ for(const pl of t.players){
+      map.set(pl.name,(map.get(pl.name)||0)+Number(pl.goals||0))
+    }}}
     return [...map.entries()].sort((a,b)=>b[1]-a[1])
   },[filtered])
 
   const byGoalsYearly = useMemo(()=>{
     const inYear=sessions.filter(s=>new Date(s.date).getFullYear()===year)
     const map=new Map()
-    for(const s of inYear){
-      for(const t of s.teams) for(const pl of t.players){
-        map.set(pl.name,(map.get(pl.name)||0)+Number(pl.goals||0))
-      }
-    }
+    for(const s of inYear){ for(const t of s.teams){ for(const pl of t.players){
+      map.set(pl.name,(map.get(pl.name)||0)+Number(pl.goals||0))
+    } }}
     return [...map.entries()].sort((a,b)=>b[1]-a[1])
   },[sessions,year])
 
   const championship = useMemo(()=>{
-    // נק' לשחקן לפי תוצאת קבוצתו; עם/בלי בונוס (בונוס= +0.5 לשער? אפשר לכוונן)
     const pts=new Map()
-    const monthSessions=filtered
-    for(const s of monthSessions){
+    for(const s of filtered){
       for(const t of s.teams){
         const teamPts = t.result==='W'?3 : t.result==='D'?1 : 0
         for(const pl of t.players){
@@ -584,31 +557,22 @@ function RankScreen({players,sessions}){
       <div className="row" style={{marginTop:10, gap:12}}>
         <div className="card" style={{flex:1}}>
           <div className="section-title">מלך השערים — חודשי</div>
-          <ol>
-            {byGoalsMonthly.map(([n,v])=><li key={n}>{n} — {v}</li>)}
-            {byGoalsMonthly.length===0 && <p className="subtle">אין נתונים.</p>}
-          </ol>
+          <ol>{byGoalsMonthly.map(([n,v])=><li key={n}>{n} — {v}</li>) || null}</ol>
         </div>
         <div className="card" style={{flex:1}}>
           <div className="section-title">מלך השערים — שנתי</div>
-          <ol>
-            {byGoalsYearly.map(([n,v])=><li key={n}>{n} — {v}</li>)}
-            {byGoalsYearly.length===0 && <p className="subtle">אין נתונים.</p>}
-          </ol>
+          <ol>{byGoalsYearly.map(([n,v])=><li key={n}>{n} — {v}</li>) || null}</ol>
         </div>
         <div className="card" style={{flex:1}}>
           <div className="section-title">אליפות החודש {withBonus ? '(כולל בונוסים)' : ''}</div>
-          <ol>
-            {championship.map(([n,v])=><li key={n}>{n} — {v.toFixed(2)}</li>)}
-            {championship.length===0 && <p className="subtle">אין נתונים.</p>}
-          </ol>
+          <ol>{championship.map(([n,v])=><li key={n}>{n} — {v.toFixed(2)}</li>) || null}</ol>
         </div>
       </div>
     </div>
   )
 }
 
-/* Preview הדפסה – 2×2 כמו בצילום */
+/* Preview הדפסה – 2×2 בלבד */
 function PrintPreviewModal({onClose, teams}){
   const today=new Date().toISOString().slice(0,10)
   return (
@@ -622,13 +586,10 @@ function PrintPreviewModal({onClose, teams}){
           {teams.map((team,idx)=>(
             <div key={idx} className="sheet">
               <div className="sheetHeader">
-                <div>תאריך: {today}</div>
-                <div>קבוצה {idx+1}</div>
+                <div>תאריך: {today}</div><div>קבוצה {idx+1}</div>
               </div>
               <table className="sheetTable">
-                <thead>
-                  <tr><th style={{width:'65%'}}>שחקן</th><th>שערים</th></tr>
-                </thead>
+                <thead><tr><th style={{width:'65%'}}>שחקן</th><th>שערים</th></tr></thead>
                 <tbody>
                   {team.map(p=>(
                     <tr key={p.id}>
@@ -640,10 +601,7 @@ function PrintPreviewModal({onClose, teams}){
               </table>
               <div style={{marginTop:10}}>
                 {['ניצחון','תיקו','הפסד'].map((label,i)=>(
-                  <div key={i} className="boxRow">
-                    <div className="boxRow-label">{label}</div>
-                    <div className="boxes">{Array.from({length:6}).map((_,j)=><div key={j} className="box"/>)}</div>
-                  </div>
+                  <div key={i} className="boxRow"><div className="boxRow-label">{label}</div><div className="boxes">{Array.from({length:6}).map((_,j)=><div key={j} className="box"/>)}</div></div>
                 ))}
               </div>
             </div>
