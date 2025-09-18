@@ -1,12 +1,27 @@
-/* src/index.css */
 :root{
-  --bg:#0b1220; --card:#0f1a2e; --ink:#e8eefc; --muted:#9fb0cb; --edge:#24324a; --accent:#1db954;
+  --bg:#0b1220; --card:#0f1a2e; --ink:#e8eefc; --muted:#9fb0cb; --edge:#24324a;
+  --accent:#1db954; --accent-ink:#041b0f;
 }
 *{box-sizing:border-box}
-html,body{margin:0; background:var(--bg); color:var(--ink); font-family:Heebo,system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans Hebrew",Arial,sans-serif}
-.page{max-width:980px; margin:28px auto; padding:0 12px; direction:rtl}
-h1{margin:0 0 8px 0}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:Heebo,system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans Hebrew",Arial,sans-serif}
+.page{max-width:1100px;margin:28px auto;padding:0 12px;direction:rtl}
+h1{margin:0 0 6px 0}
+a{color:inherit}
 .muted{color:var(--muted)}
-.card{background:var(--card); border:1px solid var(--edge); border-radius:16px; padding:16px; margin-top:16px}
-a{color:var(--accent); text-decoration:none}
-code{background:#0b1a32; padding:2px 6px; border-radius:6px}
+.card{background:var(--card);border:1px solid var(--edge);border-radius:16px;padding:16px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+button,select,input,textarea{background:#11203a;color:var(--ink);border:1px solid var(--edge);
+  border-radius:12px;padding:10px}
+button{cursor:pointer}
+.tab-btn{padding:10px 14px;border-radius:14px;background:#122744;border:1px solid var(--edge)}
+.tab-btn.active{outline:2px solid var(--accent)}
+.btn-primary{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;
+  background:#0f2930;border:1px solid var(--edge);font-size:12px;color:var(--muted)}
+.table{width:100%;border-collapse:separate;border-spacing:0}
+.table th,.table td{padding:8px 10px;border-bottom:1px solid var(--edge);text-align:right}
+.table th{color:var(--muted);font-weight:600}
+hr{border:none;height:1px;background:var(--edge);margin:12px 0}
