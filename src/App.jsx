@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 /* ===== נתוני קבע ===== */
-const LS_KEY = 'katregel_state_v6'
+const LS_KEY = 'katregel_state_v7'
 const POS = [ ['GK','שוער'], ['DF','הגנה'], ['MF','קישור'], ['FW','התקפה'] ]
 const RATING_STEPS = Array.from({length:19}, (_,i)=> (1 + i*0.5)) // 1..10
 
@@ -9,6 +9,7 @@ const RATING_STEPS = Array.from({length:19}, (_,i)=> (1 + i*0.5)) // 1..10
 const uid = () => Math.random().toString(36).slice(2) + '-' + Date.now().toString(36)
 const roleName = (code) => ({GK:'שוער',DF:'הגנה',MF:'קישור',FW:'התקפה'}[code]||code)
 const normRole = (v)=>{const t=(v||'').toString().trim().toLowerCase(); if(['gk','ש','שוער'].includes(t))return 'GK'; if(['df','ה','הגנה','בלם','מגן'].includes(t))return 'DF'; if(['mf','ק','קישור','קשר'].includes(t))return 'MF'; if(['fw','ח','התקפה','חלוץ','כנף'].includes(t))return 'FW'; return ['GK','DF','MF','FW'].includes(v)?v:'MF'}
+const sortByDescRating = (arr)=> arr.sort((a,b)=> Number(b.rating||0)-Number(a.rating||0))
 
 /* --- שמירת מיקום גלילה --- */
 function useStickyScroll(key){
@@ -71,8 +72,6 @@ function buildTeamsBalanced(players, numTeams){
   const totalAvg = pool.length? pool.reduce((s,x)=>s+x.rating,0)/pool.length : 0
   const violatesAvoid = (team,p)=> team.list.some(x=> x.avoid?.includes(p.name) || p.avoid?.includes(x.name))
   const preferSatisfied = (team,p)=> p.prefer?.length? team.list.some(x=> p.prefer.includes(x.name) ): true
-
-  // רנדום קל – חלוקות שונות בכל הפעלה
   const sorted=[...pool].sort((a,b)=> (b.rating + Math.random()*0.15) - (a.rating + Math.random()*0.15))
   for(const p of sorted){
     let bestIdx=-1, bestScore=Infinity
@@ -94,7 +93,7 @@ function buildTeamsBalanced(players, numTeams){
     }
     teams[bestIdx].list.push(p); teams[bestIdx].sum+=p.rating
   }
-  return teams.map(t=>t.list)
+  return teams.map(t=> sortByDescRating(t.list))
 }
 
 /* ====== APP ====== */
@@ -103,8 +102,8 @@ export default function App(){
   const [tab,setTab]=useState('teams')
   const [teams,setTeams]=useState([])
   const [numTeams,setNumTeams]=useState(4)
-  const [hideRatings,setHideRatings]=useState(false)
-  const [printMode,setPrintMode]=useState(false)
+  const [hideTeamRatings,setHideTeamRatings]=useState(false) // משפיע רק על הקבוצות
+  const [printOpen,setPrintOpen]=useState(false)
 
   useEffect(()=>{(async()=>{
     if(store.players.length>0) return
@@ -128,14 +127,21 @@ export default function App(){
   const makeTeams=()=>{const t=buildTeamsBalanced(store.players,numTeams); setTeams(t); setTab('teams')}
   const clearTeams=()=>setTeams([])
 
+  /* עדכון קבוצה + מיון פנימי לפי ציון יורד */
+  const setTeamsSorted = (updater)=>{
+    setTeams(prev=>{
+      const next = typeof updater==='function'? updater(prev): updater
+      return next.map(g=> sortByDescRating([...g]))
+    })
+  }
+
   return (
-    <div className={printMode? 'print page':'page'}>
+    <div className="page">
       <div className="appbar">
         <div className="title">⚽ קטרגל – גן-דניאל</div>
         <div className="tabs">
           <button className={`tab ${tab==='players'?'active':''}`} onClick={()=>setTab('players')}>שחקנים</button>
           <button className={`tab ${tab==='teams'?'active':''}`} onClick={()=>setTab('teams')}>כוחות</button>
-          <button className={`tab ${tab==='ranking'?'active':''}`} onClick={()=>setTab('ranking')}>דירוג</button>
         </div>
       </div>
 
@@ -145,11 +151,11 @@ export default function App(){
           <button className="btn" onClick={()=>setNumTeams(n=>Math.max(2,n-1))}>−</button>
           <button className="btn" onClick={()=>setNumTeams(n=>Math.min(8,n+1))}>+</button>
         </div>
-        <div className="switch"><input type="checkbox" checked={hideRatings} onChange={e=>setHideRatings(e.target.checked)} /> הסתר ציונים</div>
-        <button className="btn" onClick={()=>setPrintMode(v=>!v)}>תצוגת הדפסה</button>
+        <div className="switch"><input type="checkbox" checked={hideTeamRatings} onChange={e=>setHideTeamRatings(e.target.checked)} /> הסתר ציונים (בקבוצות)</div>
         <button className="btn" onClick={clearTeams}>קבע מחזור</button>
         <button className="btn primary" onClick={makeTeams}>עשה כוחות</button>
         <span className="badge">מסומנים: {selectedCount}</span>
+        <button className="btn" onClick={()=>setPrintOpen(true)}>תצוגת הדפסה / יצוא PDF</button>
       </div>
 
       {tab==='teams' && (
@@ -158,9 +164,9 @@ export default function App(){
           update={updatePlayer}
           remove={removePlayer}
           add={addPlayer}
-          hideRatings={hideRatings}
           teams={teams}
-          setTeams={setTeams}
+          setTeamsSorted={setTeamsSorted}
+          hideTeamRatings={hideTeamRatings}
         />
       )}
 
@@ -170,21 +176,44 @@ export default function App(){
           update={updatePlayer}
           remove={removePlayer}
           add={addPlayer}
-          hideRatings={hideRatings}
         />
       )}
+
+      {printOpen && <PrintPreviewModal onClose={()=>setPrintOpen(false)} teams={teams} />}
     </div>
   )
 }
 
 /* =================== מסכי משנה =================== */
 
-function PlayersScreen({players, update, remove, add, hideRatings}){
+function PlayersScreen({players, update, remove, add}){
   const wrapRef = useStickyScroll('playersTable')
   const [showAdd,setShowAdd]=useState(false)
   const [newPlayer,setNewPlayer]=useState({name:'',role:'DF',rating:7,selected:true})
 
-  const sorted=[...players].sort((a,b)=> a.name.localeCompare(b.name,'he'))
+  /* מיון בכותרת */
+  const [sortBy,setSortBy]=useState('name')
+  const [dir,setDir]=useState('asc')
+
+  const sorted = useMemo(()=>{
+    const arr=[...players]
+    const cmp = {
+      name: (a,b)=> a.name.localeCompare(b.name,'he'),
+      role: (a,b)=> roleName(a.role).localeCompare(roleName(b.role),'he'),
+      rating: (a,b)=> a.rating-b.rating,
+      selected: (a,b)=> Number(a.selected)-Number(b.selected),
+      prefer: (a,b)=> (a.prefer?.length||0)-(b.prefer?.length||0),
+      avoid:  (a,b)=> (a.avoid ?.length||0)-(b.avoid ?.length||0),
+    }[sortBy] || ((a,b)=>0)
+    arr.sort(cmp); if(dir==='desc') arr.reverse(); return arr
+  },[players,sortBy,dir])
+
+  const onSort = (col)=>{
+    setSortBy(prev=>{
+      if(prev===col){ setDir(d=> d==='asc' ? 'desc' : 'asc'); return prev }
+      setDir('asc'); return col
+    })
+  }
 
   return (
     <div className="card">
@@ -197,11 +226,12 @@ function PlayersScreen({players, update, remove, add, hideRatings}){
           players={sorted}
           update={update}
           remove={remove}
-          hideRatings={hideRatings}
+          hideRatings={false}           /* לא מסתירים ציונים בטבלה */
           showDragHandle={false}
-          sortBy={'name'}
-          dir={'asc'}
-          onSort={()=>{}}
+          onDragStartRow={()=>{}}
+          sortBy={sortBy}
+          dir={dir}
+          onSort={onSort}
         />
       </div>
 
@@ -220,25 +250,25 @@ function PlayersScreen({players, update, remove, add, hideRatings}){
   )
 }
 
-function TeamsScreen({players, update, remove, add, hideRatings, teams, setTeams}){
-  /* מיון בכותרת */
+function TeamsScreen({players, update, remove, add, teams, setTeamsSorted, hideTeamRatings}){
+  /* מיון רשימת השחקנים למטה */
   const [sortBy,setSortBy]=useState('name')
   const [dir,setDir]=useState('asc')
 
   const tableRef = useStickyScroll('teamsPlayersTable')
   const teamsRef = useStickyScroll('teamsGrid')
 
-  const sorted = useMemo(()=>{
+  const sortedList = useMemo(()=>{
     const arr=[...players]
     const cmp = {
       name: (a,b)=> a.name.localeCompare(b.name,'he'),
       role: (a,b)=> roleName(a.role).localeCompare(roleName(b.role),'he'),
       rating: (a,b)=> a.rating-b.rating,
       selected: (a,b)=> Number(a.selected)-Number(b.selected),
-    }[sortBy]
-    arr.sort(cmp)
-    if(dir==='desc') arr.reverse()
-    return arr
+      prefer: (a,b)=> (a.prefer?.length||0)-(b.prefer?.length||0),
+      avoid:  (a,b)=> (a.avoid ?.length||0)-(b.avoid ?.length||0),
+    }[sortBy] || ((a,b)=>0)
+    arr.sort(cmp); if(dir==='desc') arr.reverse(); return arr
   },[players,sortBy,dir])
 
   const handleSort = (col)=>{
@@ -259,7 +289,7 @@ function TeamsScreen({players, update, remove, add, hideRatings, teams, setTeams
     e.preventDefault(); e.currentTarget.classList.remove('over')
     const data = JSON.parse(e.dataTransfer.getData('application/json')||'{}')
     if(!data.pid) return
-    setTeams(prev=>{
+    setTeamsSorted(prev=>{
       const clone = prev.map(t=>[...t])
       if(!clone[targetIdx].some(p=>String(p.id)===String(data.pid))){
         const obj = players.find(p=>String(p.id)===String(data.pid))
@@ -277,7 +307,7 @@ function TeamsScreen({players, update, remove, add, hideRatings, teams, setTeams
     e.dataTransfer.effectAllowed = 'move'
   }
 
-  /* הוספת שחקן מהמסך */
+  /* הוספה מהמסך */
   const [showAdd,setShowAdd]=useState(false)
   const [newPlayer,setNewPlayer]=useState({name:'',role:'DF',rating:7,selected:true})
 
@@ -302,8 +332,11 @@ function TeamsScreen({players, update, remove, add, hideRatings, teams, setTeams
                   <div key={p.id} className="player-line"
                        draggable
                        onDragStart={(e)=>onDragStartFromTeam(e,p.id,idx)}>
-                    <span>• {p.name}</span>
-                    <span className="subtle">{roleName(p.role)} · {p.rating} <span className="handle">⋮⋮</span></span>
+                    <span><span className="handle">⋮⋮</span>{' '}{p.name}</span>
+                    <span className="subtle">
+                      {roleName(p.role)}
+                      {!hideTeamRatings && <> · {p.rating}</>}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -319,10 +352,10 @@ function TeamsScreen({players, update, remove, add, hideRatings, teams, setTeams
 
       <div className="playersBelow" ref={tableRef}>
         <PlayersTable
-          players={sorted}
+          players={sortedList}
           update={update}
           remove={remove}
-          hideRatings={hideRatings}
+          hideRatings={false}       /* לא מסתירים ציונים בטבלה */
           showDragHandle={true}
           onDragStartRow={onDragStartRow}
           sortBy={sortBy}
@@ -346,29 +379,33 @@ function TeamsScreen({players, update, remove, add, hideRatings, teams, setTeams
   )
 }
 
-/* ===== טבלת שחקנים לשימוש חוזר ===== */
+/* ===== טבלת שחקנים לשימוש חוזר – סדר עמודות הפוך ===== */
 function PlayersTable({players, update, remove, hideRatings, showDragHandle, onDragStartRow, sortBy, dir, onSort}){
   const Arrow = ({col}) => (sortBy===col ? <span className="arrow">{dir==='asc'?'▲':'▼'}</span> : <span className="arrow" style={{opacity:.3}}>↕</span>)
   return (
     <table className="table">
       <thead>
         <tr>
-          <th style={{width:64}}>מחק</th>
-          <th className="th-sort" onClick={()=>onSort('avoid')}>לא עם <Arrow col="avoid" /></th>
-          <th className="th-sort" onClick={()=>onSort('prefer')}>חייב עם <Arrow col="prefer" /></th>
-          {!hideRatings && <th className="th-sort" style={{width:90}} onClick={()=>onSort('rating')}>ציון <Arrow col="rating" /></th>}
-          <th className="th-sort" style={{width:120}} onClick={()=>onSort('role')}>עמדה <Arrow col="role" /></th>
+          <th className="th-sort" style={{width:80,textAlign:'center'}} onClick={()=>onSort('selected')}>משחק? <Arrow col="selected" /></th>
           <th className="th-sort" onClick={()=>onSort('name')}>שם <Arrow col="name" /></th>
-          <th className="th-sort" style={{width:80}} onClick={()=>onSort('selected')}>משחק? <Arrow col="selected" /></th>
+          <th className="th-sort" style={{width:120}} onClick={()=>onSort('role')}>עמדה <Arrow col="role" /></th>
+          {!hideRatings && <th className="th-sort" style={{width:90}} onClick={()=>onSort('rating')}>ציון <Arrow col="rating" /></th>}
+          <th className="th-sort" onClick={()=>onSort('prefer')}>חייב עם <Arrow col="prefer" /></th>
+          <th className="th-sort" onClick={()=>onSort('avoid')}>לא עם <Arrow col="avoid" /></th>
+          <th style={{width:64}}>מחק</th>
           {showDragHandle && <th style={{width:36}}></th>}
         </tr>
       </thead>
       <tbody>
         {players.map(p=> (
           <tr key={p.id}>
-            <td><button className="btn danger" onClick={()=>remove(p.id)}>מחק</button></td>
-            <td><div className="chips">{(p.avoid||[]).map(n=> <span key={n} className="chip hollow">{n}</span>)}</div></td>
-            <td><div className="chips">{(p.prefer||[]).map(n=> <span key={n} className="chip">{n}</span>)}</div></td>
+            <td style={{textAlign:'center'}}><input type="checkbox" checked={!!p.selected} onChange={e=>update(p.id,{selected:e.target.checked})}/></td>
+            <td><input className="mini" value={p.name} onChange={e=>update(p.id,{name:e.target.value})}/></td>
+            <td>
+              <select className="mini" value={p.role} onChange={e=>update(p.id,{role:e.target.value})}>
+                {POS.map(([v,t])=> <option key={v} value={v}>{t}</option>)}
+              </select>
+            </td>
             {!hideRatings && (
               <td>
                 <select className="mini" value={p.rating} onChange={e=>update(p.id,{rating:Number(e.target.value)})}>
@@ -376,13 +413,9 @@ function PlayersTable({players, update, remove, hideRatings, showDragHandle, onD
                 </select>
               </td>
             )}
-            <td>
-              <select className="mini" value={p.role} onChange={e=>update(p.id,{role:e.target.value})}>
-                {POS.map(([v,t])=> <option key={v} value={v}>{t}</option>)}
-              </select>
-            </td>
-            <td><input className="mini" value={p.name} onChange={e=>update(p.id,{name:e.target.value})}/></td>
-            <td style={{textAlign:'center'}}><input type="checkbox" checked={!!p.selected} onChange={e=>update(p.id,{selected:e.target.checked})}/></td>
+            <td><div className="chips">{(p.prefer||[]).map(n=> <span key={n} className="chip">{n}</span>)}</div></td>
+            <td><div className="chips">{(p.avoid ||[]).map(n=> <span key={n} className="chip hollow">{n}</span>)}</div></td>
+            <td><button className="btn danger" onClick={()=>remove(p.id)}>מחק</button></td>
             {showDragHandle && (
               <td title="גרור לקבוצה">
                 <span className="handle" draggable onDragStart={(e)=>onDragStartRow?.(e, p.id)}>⋮⋮</span>
@@ -414,6 +447,58 @@ function AddPlayerModal({newPlayer,setNewPlayer,onCancel,onSave}){
         <div className="row" style={{marginTop:10}}>
           <button className="btn" onClick={onCancel}>בטל</button>
           <button className="btn primary" onClick={onSave}>שמור</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ===== תצוגת הדפסה ===== */
+function PrintPreviewModal({onClose, teams}){
+  const today = new Date().toISOString().slice(0,10)
+  return (
+    <div className="modal printModal" onClick={onClose}>
+      <div className="box" onClick={e=>e.stopPropagation()}>
+        <div className="printBtnBar">
+          <button className="btn primary" onClick={()=>window.print()}>יצוא PDF / הדפס</button>
+          <button className="btn" onClick={onClose}>סגור</button>
+        </div>
+        <div className="sheetGrid">
+          {teams.map((team,idx)=>(
+            <div key={idx} className="sheet">
+              <div className="sheetHeader">
+                <div>קבוצה {idx+1}</div>
+                <div>תאריך: {today}</div>
+              </div>
+              <table className="sheetTable">
+                <thead>
+                  <tr><th style={{width:'70%'}}>שחקן</th><th>שערים</th></tr>
+                </thead>
+                <tbody>
+                  {team.map(p=>(
+                    <tr key={p.id}>
+                      <td>{p.name}</td>
+                      <td>
+                        <div className="boxes">
+                          {Array.from({length:10}).map((_,i)=><div key={i} className="box"/>)}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* בלוק ניצחון/תיקו/הפסד כמו בתמונה */}
+              <div style={{marginTop:10}}>
+                {['ניצחון','תיקו','הפסד',''].map((label,i)=>(
+                  <div key={i} className="boxRow">
+                    <div className="boxRow-label">{label}</div>
+                    <div className="boxes">{Array.from({length:6}).map((_,j)=><div key={j} className="box"/>)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
