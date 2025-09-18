@@ -27,7 +27,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,syste
 .table{width:100%; border-collapse:separate; border-spacing:0}
 .table thead th{position:sticky; top:0; background:#0f3e2a; color:#c7f1d0; border-bottom:1px solid var(--edge); padding:10px; z-index:1}
 .table td{padding:8px 10px; border-bottom:1px solid var(--edge)}
-.table input,.table select{background:#102c44; border:1px solid var(--edge); color:var(--ink); border-radius:10px; padding:8px}
+.table input,.table select{background:#102c44; border:1px solid var(--edge); color:#var(--ink); border-radius:10px; padding:8px}
 .table .mini{padding:6px 8px}
 .th-sort{cursor:pointer; user-select:none}
 .th-sort .arrow{opacity:.85; margin-inline-start:6px}
@@ -50,26 +50,26 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,syste
 .teamHeader .name{ color:#a9f0c6; font-weight:800 }
 .teamHeader .meta{ color:#9fb0cb; font-size:12px }
 
-.player-line{ display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px dashed #244362 }
+.player-line{ display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px dashed #244362; cursor:grab }
 .player-line:last-child{ border-bottom:none }
-.handle{ opacity:.9; margin-inline-end:8px; cursor:grab; user-select:none } /* ידית מימין לשם */
+.handle{ opacity:.95; margin-inline-end:8px; cursor:grab; user-select:none } /* ידית מימין לשם */
 
 /* DnD */
 .dropzone{min-height:42px; border:1px dashed transparent; padding:4px; border-radius:10px}
 .dropzone.over{border-color:#2e6bd1; background:#0c2740}
 
-/* ==== Preview הדפסה (1:1 לצילום) ==== */
+/* ==== Preview הדפסה (1:1) ==== */
 .printModal .box{width:min(1200px,95vw)}
 .sheetGrid{display:grid; grid-template-columns:1fr 1fr; gap:12px}
 @media (max-width:900px){ .sheetGrid{grid-template-columns:1fr} }
 
-.sheet{background:#0b192b; border:1px solid #2b405e; border-radius:10px; padding:10px}
+.sheet{background:#0b192b; border:2px solid #2b405e; border-radius:10px; padding:10px}
 .sheetHeader{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px}
 .sheetTable{width:100%; border-collapse:collapse}
-.sheetTable th,.sheetTable td{border:1px solid #2b405e; padding:6px; text-align:right}
+.sheetTable th,.sheetTable td{border:1.5px solid #2b405e; padding:6px; text-align:right}
 .sheetTable th{background:#0e2a3f}
-.boxes{display:grid; grid-template-columns: repeat(8, 18px); gap:6px; justify-content:start} /* 8 משבצות לשערים */
-.box{width:18px; height:18px; border:1px solid #2b405e; border-radius:4px; background:#09131f}
+.boxes{display:grid; grid-template-columns: repeat(8, 18px); gap:6px; justify-content:start}
+.box{width:18px; height:18px; border:1.5px solid #2b405e; border-radius:4px; background:#09131f}
 .boxRow{display:flex; align-items:center; gap:8px; margin:8px 0}
 .boxRow-label{width:60px; text-align:right; color:#c7d3ea}
 
@@ -79,6 +79,6 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,syste
   .page, .modal{margin:0; padding:0; max-width:none}
   .controls, .appbar, .tabs{display:none !important}
   .sheet{background:#fff; border-color:#000}
-  .sheetTable th,.sheetTable td{border-color:#000}
-  .box{border-color:#000; background:#fff}
+  .sheetTable th,.sheetTable td,.box{border-color:#000}
+  .box{background:#fff}
 }
