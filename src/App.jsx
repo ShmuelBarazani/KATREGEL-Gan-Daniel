@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 /* ===== נתוני קבע ===== */
-const LS_KEY = 'katregel_state_v7'
+const LS_KEY = 'katregel_state_v8'
 const POS = [ ['GK','שוער'], ['DF','הגנה'], ['MF','קישור'], ['FW','התקפה'] ]
 const RATING_STEPS = Array.from({length:19}, (_,i)=> (1 + i*0.5)) // 1..10
 
@@ -9,6 +9,8 @@ const RATING_STEPS = Array.from({length:19}, (_,i)=> (1 + i*0.5)) // 1..10
 const uid = () => Math.random().toString(36).slice(2) + '-' + Date.now().toString(36)
 const roleName = (code) => ({GK:'שוער',DF:'הגנה',MF:'קישור',FW:'התקפה'}[code]||code)
 const normRole = (v)=>{const t=(v||'').toString().trim().toLowerCase(); if(['gk','ש','שוער'].includes(t))return 'GK'; if(['df','ה','הגנה','בלם','מגן'].includes(t))return 'DF'; if(['mf','ק','קישור','קשר'].includes(t))return 'MF'; if(['fw','ח','התקפה','חלוץ','כנף'].includes(t))return 'FW'; return ['GK','DF','MF','FW'].includes(v)?v:'MF'}
+const sum = arr => arr.reduce((s,x)=>s+Number(x||0),0)
+const avg = arr => arr.length ? sum(arr)/arr.length : 0
 const sortByDescRating = (arr)=> arr.sort((a,b)=> Number(b.rating||0)-Number(a.rating||0))
 
 /* --- שמירת מיקום גלילה --- */
@@ -59,41 +61,90 @@ function refsToNames(list){
 
 /* ===== אחסון מתמשך ===== */
 function useStore(){
-  const [state,setState]=useState(()=>{try{const raw=localStorage.getItem(LS_KEY);return raw?JSON.parse(raw):{players:[],sessions:[],results:{}}}catch{return {players:[],sessions:[],results:{}}}})
+  const [state,setState]=useState(()=>{try{const raw=localStorage.getItem(LS_KEY);return raw?JSON.parse(raw):{players:[],results:{}}}catch{return {players:[],results:{}}}})
   useEffect(()=>{try{localStorage.setItem(LS_KEY,JSON.stringify(state))}catch{}},[state])
   return [state,setState]
 }
 
-/* ===== בניית כוחות מאוזנים ===== */
-function buildTeamsBalanced(players, numTeams){
+/* ===== בדיקת אילוצים ===== */
+function violatesAvoid(team, p){
+  return team.some(x=> x.avoid?.includes(p.name) || p.avoid?.includes(x.name))
+}
+function preferSatisfied(team, p){
+  return p.prefer?.length ? team.some(x=> p.prefer.includes(x.name)) : true
+}
+function validTeam(team){
+  for(const p of team){
+    if(violatesAvoid(team.filter(x=>x!==p), p)) return false
+    if(p.prefer?.length && !preferSatisfied(team.filter(x=>x!==p), p)) return false
+  }
+  return true
+}
+
+/* ===== יצירת כוחות מאוזנים + איזון נוסף ===== */
+function buildTeamsBalanced(players, k){
   const pool = players.filter(p=>p.selected)
-  const maxPerTeam = Math.ceil(pool.length/numTeams)
-  const teams = Array.from({length:numTeams},()=>({list:[], sum:0}))
-  const totalAvg = pool.length? pool.reduce((s,x)=>s+x.rating,0)/pool.length : 0
-  const violatesAvoid = (team,p)=> team.list.some(x=> x.avoid?.includes(p.name) || p.avoid?.includes(x.name))
-  const preferSatisfied = (team,p)=> p.prefer?.length? team.list.some(x=> p.prefer.includes(x.name) ): true
+  const maxPerTeam = Math.ceil(pool.length/k)
+  const minPerTeam = Math.floor(pool.length/k)
+  const teams = Array.from({length:k},()=>({list:[], sum:0}))
+  const globalAvg = avg(pool.map(p=>p.rating))
+
+  // התחלה גרידית עם אילוצים
   const sorted=[...pool].sort((a,b)=> (b.rating + Math.random()*0.15) - (a.rating + Math.random()*0.15))
   for(const p of sorted){
-    let bestIdx=-1, bestScore=Infinity
-    for(let i=0;i<numTeams;i++){
+    let best=-1, bestScore=Infinity
+    for(let i=0;i<k;i++){
       const t=teams[i]; if(t.list.length>=maxPerTeam) continue
-      if(violatesAvoid(t,p)) continue
-      const prefOK = preferSatisfied(t,p)
+      if(violatesAvoid(t.list,p)) continue
+      const prefOK = preferSatisfied(t.list,p)
       const newAvg = (t.sum + p.rating)/(t.list.length+1)
-      const balanceScore = Math.abs(newAvg - totalAvg) + t.list.length*0.01
-      const score = (prefOK?0:1)*1000 + balanceScore
-      if(score<bestScore){bestScore=score; bestIdx=i}
+      const score = Math.abs(newAvg - globalAvg) + (prefOK?0:1000)
+      if(score<bestScore){bestScore=score; best=i}
     }
-    if(bestIdx<0){
-      for(let i=0;i<numTeams;i++){
-        const t=teams[i]; if(t.list.length>=maxPerTeam) continue
-        if(!violatesAvoid(t,p)){ bestIdx=i; break }
-      }
-      if(bestIdx<0) bestIdx=0
+    if(best<0){
+      // אין מקום שלא מפר אילוצים – נדחוף למינימום הפרה
+      let i = teams.findIndex(t=>t.list.length<maxPerTeam)
+      if(i<0) i=0
+      teams[i].list.push(p); teams[i].sum+=p.rating
+    }else{
+      teams[best].list.push(p); teams[best].sum+=p.rating
     }
-    teams[bestIdx].list.push(p); teams[bestIdx].sum+=p.rating
   }
-  return teams.map(t=> sortByDescRating(t.list))
+
+  // איזון מקומי: החלפות/העברות לשיפור פיזור הממוצעים (שומר על אילוצים)
+  const getAverages = (T)=> T.map(t=> avg(t.list.map(p=>p.rating)))
+  const objective = (T)=>{
+    const A=getAverages(T); const sp=Math.max(...A)-Math.min(...A)
+    const varSum=A.reduce((s,a)=>s+(a-globalAvg)**2,0)
+    return sp*100 + varSum
+  }
+  const T = teams.map(t=>({list:[...t.list], sum:sum(t.list.map(p=>p.rating))}))
+  let bestObj = objective(T)
+
+  const tries = 2000
+  for(let it=0; it<tries; it++){
+    const a = Math.floor(Math.random()*k), b = Math.floor(Math.random()*k)
+    if(a===b) continue
+    const ta=T[a].list, tb=T[b].list
+    if(!ta.length || !tb.length) continue
+    const pa = ta[Math.floor(Math.random()*ta.length)]
+    const pb = tb[Math.floor(Math.random()*tb.length)]
+
+    // החלפה
+    const newA = [...ta.filter(x=>x!==pa), pb]
+    const newB = [...tb.filter(x=>x!==pb), pa]
+    if(newA.length<minPerTeam||newB.length<minPerTeam) continue
+    if(!validTeam(newA)||!validTeam(newB)) continue
+
+    const T2=T.map((tt,i)=>({list: i===a?newA : i===b?newB : tt.list}))
+    const obj = objective(T2)
+    if(obj + 1e-9 < bestObj){ // שיפור
+      T[a].list=newA; T[b].list=newB; bestObj=obj
+    }
+  }
+
+  // סדר בתוך קבוצה וצא
+  return T.map(t=> sortByDescRating(t.list))
 }
 
 /* ====== APP ====== */
@@ -127,7 +178,7 @@ export default function App(){
   const makeTeams=()=>{const t=buildTeamsBalanced(store.players,numTeams); setTeams(t); setTab('teams')}
   const clearTeams=()=>setTeams([])
 
-  /* עדכון קבוצה + מיון פנימי לפי ציון יורד */
+  /* תמיד נשמור מיון יורד אחרי כל שינוי */
   const setTeamsSorted = (updater)=>{
     setTeams(prev=>{
       const next = typeof updater==='function'? updater(prev): updater
@@ -318,15 +369,15 @@ function TeamsScreen({players, update, remove, add, teams, setTeamsSorted, hideT
         <div className="teamsGrid">
           {teams.length===0 && <p className="footer-note" style={{gridColumn:'1 / -1'}}>עוד לא נוצרו כוחות. לחץ “עשה כוחות”.</p>}
           {teams.map((team,idx)=>{
-            const sum = team.reduce((s,p)=>s+Number(p.rating||0),0)
-            const avg = team.length? (sum/team.length).toFixed(2):'—'
+            const ratings = team.map(p=>p.rating)
+            const sumR = sum(ratings), avgR = ratings.length? (sumR/ratings.length).toFixed(2):'—'
             return (
               <div key={idx} className="teamCard dropzone"
                    onDragOver={onDragOver} onDragLeave={onDragLeave}
                    onDrop={(e)=>dropToTeam(e, idx)}>
                 <div className="teamHeader">
                   <div className="name">קבוצה {idx+1}</div>
-                  <div className="meta">{avg} ממוצע | {sum.toFixed(1)} ס״כ</div>
+                  <div className="meta">{avgR} ממוצע | {sumR.toFixed(1)} ס״כ</div>
                 </div>
                 {team.map((p)=>(
                   <div key={p.id} className="player-line"
@@ -355,7 +406,7 @@ function TeamsScreen({players, update, remove, add, teams, setTeamsSorted, hideT
           players={sortedList}
           update={update}
           remove={remove}
-          hideRatings={false}       /* לא מסתירים ציונים בטבלה */
+          hideRatings={false}
           showDragHandle={true}
           onDragStartRow={onDragStartRow}
           sortBy={sortBy}
@@ -379,7 +430,7 @@ function TeamsScreen({players, update, remove, add, teams, setTeamsSorted, hideT
   )
 }
 
-/* ===== טבלת שחקנים לשימוש חוזר – סדר עמודות הפוך ===== */
+/* ===== טבלת שחקנים – סדר עמודות הפוך ומיון בכותרת ===== */
 function PlayersTable({players, update, remove, hideRatings, showDragHandle, onDragStartRow, sortBy, dir, onSort}){
   const Arrow = ({col}) => (sortBy===col ? <span className="arrow">{dir==='asc'?'▲':'▼'}</span> : <span className="arrow" style={{opacity:.3}}>↕</span>)
   return (
@@ -445,7 +496,7 @@ function AddPlayerModal({newPlayer,setNewPlayer,onCancel,onSave}){
           <label className="switch"><input type="checkbox" checked={newPlayer.selected} onChange={e=>setNewPlayer(p=>({...p,selected:e.target.checked}))}/> משחק?</label>
         </div>
         <div className="row" style={{marginTop:10}}>
-          <button className="btn" onClick={onCancel}>בטל</button>
+          <button className="btn" onClick={onCancel}>סגור</button>
           <button className="btn primary" onClick={onSave}>שמור</button>
         </div>
       </div>
@@ -453,13 +504,13 @@ function AddPlayerModal({newPlayer,setNewPlayer,onCancel,onSave}){
   )
 }
 
-/* ===== תצוגת הדפסה ===== */
+/* ===== תצוגת הדפסה – Preview אמיתי ===== */
 function PrintPreviewModal({onClose, teams}){
   const today = new Date().toISOString().slice(0,10)
   return (
     <div className="modal printModal" onClick={onClose}>
       <div className="box" onClick={e=>e.stopPropagation()}>
-        <div className="printBtnBar">
+        <div className="row" style={{gap:8, marginBottom:10}}>
           <button className="btn primary" onClick={()=>window.print()}>יצוא PDF / הדפס</button>
           <button className="btn" onClick={onClose}>סגור</button>
         </div>
@@ -467,30 +518,25 @@ function PrintPreviewModal({onClose, teams}){
           {teams.map((team,idx)=>(
             <div key={idx} className="sheet">
               <div className="sheetHeader">
-                <div>קבוצה {idx+1}</div>
                 <div>תאריך: {today}</div>
+                <div>קבוצה {idx+1}</div>
               </div>
               <table className="sheetTable">
                 <thead>
-                  <tr><th style={{width:'70%'}}>שחקן</th><th>שערים</th></tr>
+                  {/* כמו בצילום: "שחקן" בעמודה הימנית, "שערים" בשמאלית */}
+                  <tr><th style={{width:'60%'}}>שחקן</th><th>שערים</th></tr>
                 </thead>
                 <tbody>
                   {team.map(p=>(
                     <tr key={p.id}>
                       <td>{p.name}</td>
-                      <td>
-                        <div className="boxes">
-                          {Array.from({length:10}).map((_,i)=><div key={i} className="box"/>)}
-                        </div>
-                      </td>
+                      <td><div className="boxes">{Array.from({length:8}).map((_,i)=><div key={i} className="box"/>)}</div></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-
-              {/* בלוק ניצחון/תיקו/הפסד כמו בתמונה */}
               <div style={{marginTop:10}}>
-                {['ניצחון','תיקו','הפסד',''].map((label,i)=>(
+                {['ניצחון','תיקו','הפסד'].map((label,i)=>(
                   <div key={i} className="boxRow">
                     <div className="boxRow-label">{label}</div>
                     <div className="boxes">{Array.from({length:6}).map((_,j)=><div key={j} className="box"/>)}</div>
