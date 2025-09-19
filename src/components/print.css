@@ -1,0 +1,48 @@
+/* שכבת Preview */
+.print-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:1000;
+}
+.print-dialog {
+  width:min(1200px, 92vw); max-height:92vh; overflow:auto; background:#0c151a; border:1px solid #234; border-radius:14px;
+}
+.print-header { position:sticky; top:0; background:#0c151a; display:flex; gap:10px; align-items:center; padding:10px; border-bottom:1px solid #234; }
+.print-header .title { color:#aef0cf; font-weight:800; }
+.print-header .spacer { flex:1; }
+.btn.outline { background:transparent; color:#dff; border:1px solid #2e525c; padding:6px 10px; border-radius:8px; cursor:pointer; }
+.btn.primary { background:#2b9e68; border:1px solid #2b9e68; color:#062218; font-weight:800; padding:6px 12px; border-radius:8px; cursor:pointer; }
+
+.print-pages { padding:10px; }
+.print-page {
+  display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  page-break-after:always;
+}
+.print-page:last-child { page-break-after:auto; }
+
+.teamcard {
+  background:white; color:#000; border:1px solid #000; border-radius:8px; padding:10px;
+}
+.teamcard.stub { visibility:hidden; }
+.teamcard-head {
+  display:flex; justify-content:space-between; font-weight:800; margin-bottom:6px;
+}
+.teamcard .date { color:#333; }
+
+.print-table { width:100%; border-collapse:collapse; }
+.print-table thead th {
+  border:1px solid #444; padding:6px; background:#f2f2f2; text-align:right;
+}
+.print-table td { border:1px solid #444; padding:4px; }
+.print-table .w-goals { width:55%; }
+
+.goals-cells { display:flex; flex-wrap:wrap; gap:4px; padding:6px; }
+.box {
+  display:inline-block; width:18px; height:18px; border:1px solid #333; border-radius:3px;
+}
+.player-name { text-align:right; }
+
+.results-row .result-label { margin-inline-start:10px; margin-inline-end:6px; font-weight:700; }
+@media print {
+  .print-overlay { position:static; background:none; }
+  .print-dialog { width:auto; max-height:none; border:none; }
+  .print-header { display:none; }
+}
