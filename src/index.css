@@ -1,10 +1,9 @@
 :root{
-  --bg:#09131f; --panel:#0d1b2a; --card:#102236; --edge:#1e3550; --ink:#e8eefc;
+  --bg:#09131f; --panel:#0d1b2a; --card:#102236; --edge:#1e3550; --ink:#eef6ff;
   --muted:#9fb0cb; --accent:#1db954; --accent-ink:#08160f; --danger:#ff5d5d;
 }
 html,body{margin:0; background:var(--bg); color:var(--ink); font-family:Heebo,system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans Hebrew",Arial,sans-serif}
 .page{max-width:1200px; margin:16px auto 32px; padding:0 12px; direction:rtl}
-
 .appbar{display:flex; align-items:center; gap:10px; margin-bottom:10px}
 .title{font-weight:800; font-size:22px}
 .tabs{margin-inline-start:auto; display:flex; gap:10px}
@@ -48,8 +47,13 @@ html,body{margin:0; background:var(--bg); color:var(--ink); font-family:Heebo,sy
 .dropzone{min-height:42px; border:1px dashed transparent; border-radius:10px}
 .dropzone.over{border-color:#2e6bd1; background:#0c2740}
 
-.modal{position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; z-index:1000}
+/* מודל אמיתי מעל המסך */
+.modal{position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; z-index:2147483647}
 .modal .box{background:var(--card); border:1px solid var(--edge); border-radius:16px; padding:16px; max-height:90vh; overflow:auto; min-width:min(960px,95vw)}
+/* חלונית הוספת שחקן – גדולה וברורה */
+.modal .box.wide{ width: min(820px, 95vw); }
+.modal .box.wide .row{ flex-wrap: wrap; gap: 12px; }
+.modal .box.wide .mini{ min-width: 180px; }
 
 .printModal .box{width:min(1200px,95vw)}
 .sheetGrid{display:grid; grid-template-columns:1fr 1fr; gap:12px}
@@ -67,7 +71,7 @@ html,body{margin:0; background:var(--bg); color:var(--ink); font-family:Heebo,sy
 @media print{
   @page{ size:A4 portrait; margin:12mm }
   body *{ visibility:hidden !important }
-  .printModal, .printModal *{ visibility:visible !important }
+  .printContent, .printContent *{ visibility:visible !important }
   .printModal{ position:fixed; inset:0 }
   .modal .box{ max-height:none; overflow:visible }
 }
