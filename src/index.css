@@ -1,86 +1,73 @@
 :root{
-  --bg:#09131f; --panel:#0d1b2a; --card:#102236; --edge:#1e3550; --ink:#e8eefc; --muted:#9fb0cb;
-  --accent:#1db954; --accent-ink:#08160f; --danger:#ff5d5d;
+  --bg:#09131f; --panel:#0d1b2a; --card:#102236; --edge:#1e3550; --ink:#e8eefc;
+  --muted:#9fb0cb; --accent:#1db954; --accent-ink:#08160f; --danger:#ff5d5d;
 }
-*{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans Hebrew",Arial,sans-serif}
-.page{max-width:1200px;margin:16px auto 32px; padding:0 12px; direction:rtl}
+html,body{margin:0; background:var(--bg); color:var(--ink); font-family:Heebo,system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans Hebrew",Arial,sans-serif}
+.page{max-width:1200px; margin:16px auto 32px; padding:0 12px; direction:rtl}
 
-/* HEADER / TABS */
 .appbar{display:flex; align-items:center; gap:10px; margin-bottom:10px}
-.appbar .title{font-size:22px; font-weight:800; display:flex; align-items:center; gap:8px}
-.appbar .tabs{margin-inline-start:auto; display:flex; gap:10px}
-.tab{padding:8px 12px; border-radius:999px; border:1px solid var(--edge); background:#0f2136; color:var(--ink); cursor:pointer}
+.title{font-weight:800; font-size:22px}
+.tabs{margin-inline-start:auto; display:flex; gap:10px}
+.tab{padding:8px 12px; border:1px solid var(--edge); background:#0f2136; color:var(--ink); border-radius:999px; cursor:pointer}
 .tab.active{outline:2px solid var(--accent)}
 
-.controls{display:flex; flex-wrap:wrap; gap:10px; background:var(--panel); border:1px solid var(--edge); border-radius:14px; padding:10px}
-.badge{min-width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid var(--edge); background:#0f2930; color:var(--ink)}
+.controls{display:flex; gap:10px; flex-wrap:wrap; background:var(--panel); border:1px solid var(--edge); border-radius:14px; padding:10px}
+.badge{min-width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--edge); background:#0f2930; border-radius:8px}
 .btn{background:#122744; color:var(--ink); border:1px solid var(--edge); border-radius:12px; padding:8px 12px; cursor:pointer}
 .btn.primary{background:var(--accent); color:var(--accent-ink); border-color:transparent}
 .btn.danger{background:#2c0f12; border-color:#4d1a1f; color:#ffc7c7}
-.switch{display:inline-flex; align-items:center; gap:6px}
+.muted{color:var(--muted)}
+.section-title{font-weight:800; margin-bottom:6px}
 
 .card{background:var(--card); border:1px solid var(--edge); border-radius:16px; padding:12px}
-.row{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+.row{display:flex; gap:10px; align-items:center}
 
-/* ===== טבלאות שחקנים ===== */
 .table{width:100%; border-collapse:separate; border-spacing:0}
-.table thead th{position:sticky; top:0; background:#0f3e2a; color:#c7f1d0; border-bottom:1px solid var(--edge); padding:10px; z-index:1}
+.table thead th{position:sticky; top:0; background:#0f3e2a; color:#c7f1d0; border-bottom:1px solid var(--edge); padding:10px}
 .table td{padding:8px 10px; border-bottom:1px solid var(--edge)}
-.table input,.table select{background:#102c44; border:1px solid var(--edge); color: var(--ink); border-radius:10px; padding:8px}
+.table input,.table select{background:#102c44; color:var(--ink); border:1px solid var(--edge); border-radius:10px; padding:8px}
 .table .mini{padding:6px 8px}
 .th-sort{cursor:pointer; user-select:none}
-.th-sort .arrow{opacity:.85; margin-inline-start:6px}
 
 .chips{display:flex; gap:6px; flex-wrap:wrap}
 .chip{background:#0e2f24; border:1px solid #1b684b; color:#bff7d2; padding:4px 10px; border-radius:999px; font-size:12px}
 .chip.hollow{background:#0f2136; border-color:var(--edge); color:#9fb0cb}
 
-/* ===== כוחות: קבוצות למעלה + רשימת שחקנים מתחת ===== */
 .teamsTop{ max-height: 36vh; overflow:auto; margin-bottom:12px; }
-.playersBelow{ max-height: 46vh; min-height: 260px; overflow:auto; }
-
-.teamsGrid{ display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; }
-@media (max-width:1200px){ .teamsGrid{grid-template-columns: repeat(3, 1fr);} }
-@media (max-width:900px){ .teamsGrid{grid-template-columns: repeat(2, 1fr);} }
-@media (max-width:640px){ .teamsGrid{grid-template-columns: 1fr;} }
-
+.playersBelow{ max-height: 46vh; overflow:auto; }
+.teamsGrid{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+@media(max-width:1200px){ .teamsGrid{grid-template-columns:repeat(3,1fr)} }
+@media(max-width:900px){ .teamsGrid{grid-template-columns:repeat(2,1fr)} }
+@media(max-width:640px){ .teamsGrid{grid-template-columns:1fr} }
 .teamCard{ background:#0c1f33; border:1px solid var(--edge); border-radius:16px; padding:12px; }
 .teamHeader{ display:flex; justify-content:space-between; align-items:center; margin-bottom:6px }
-.teamHeader .name{ color:#a9f0c6; font-weight:800 }
-.teamHeader .meta{ color:#9fb0cb; font-size:12px }
+.name{ color:#a9f0c6; font-weight:800 }
 .player-line{ display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px dashed #244362; cursor:grab }
 .player-line:last-child{ border-bottom:none }
-.handle{ opacity:.95; margin-inline-end:8px; cursor:grab; user-select:none } /* ידית מימין לשם */
-
-/* DnD */
-.dropzone{min-height:42px; border:1px dashed transparent; padding:4px; border-radius:10px}
+.handle{ opacity:.95; margin-inline-end:8px; cursor:grab }
+.dropzone{min-height:42px; border:1px dashed transparent; border-radius:10px}
 .dropzone.over{border-color:#2e6bd1; background:#0c2740}
 
-/* ===== מודלים ===== */
 .modal{position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; z-index:1000}
 .modal .box{background:var(--card); border:1px solid var(--edge); border-radius:16px; padding:16px; max-height:90vh; overflow:auto; min-width:min(960px,95vw)}
 
-/* ===== תצוגת הדפסה ===== */
 .printModal .box{width:min(1200px,95vw)}
 .sheetGrid{display:grid; grid-template-columns:1fr 1fr; gap:12px}
-@media (max-width:900px){ .sheetGrid{grid-template-columns:1fr} }
-
-.sheet{background:#0b192b; border:2px solid #2b405e; border-radius:10px; padding:10px}
+@media(max-width:900px){ .sheetGrid{grid-template-columns:1fr} }
+.sheet{background:#0b192b; border:2px solid #2b405e; border-radius:10px; padding:10px; page-break-inside:avoid}
 .sheetHeader{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px}
 .sheetTable{width:100%; border-collapse:collapse}
 .sheetTable th,.sheetTable td{border:1.5px solid #2b405e; padding:6px; text-align:right}
 .sheetTable th{background:#0e2a3f}
-.boxes{display:grid; grid-template-columns: repeat(8, 18px); gap:6px; justify-content:start}
+.boxes{display:grid; grid-template-columns:repeat(8,18px); gap:6px; justify-content:start}
 .box{width:18px; height:18px; border:1.5px solid #2b405e; border-radius:4px; background:#09131f}
 .boxRow{display:flex; align-items:center; gap:8px; margin:8px 0}
 .boxRow-label{width:60px; text-align:right; color:#c7d3ea}
 
-/* ===== הדפסה בפועל: להדפיס רק את ה-Preview ===== */
 @media print{
-  @page{ size: A4 portrait; margin: 12mm; }
-  body *{ visibility: hidden !important; }
-  .printModal, .printModal *{ visibility: visible !important; }
-  .printModal{ position: fixed; inset: 0; }
-  .modal .box{ max-height: none; overflow: visible; }
+  @page{ size:A4 portrait; margin:12mm }
+  body *{ visibility:hidden !important }
+  .printModal, .printModal *{ visibility:visible !important }
+  .printModal{ position:fixed; inset:0 }
+  .modal .box{ max-height:none; overflow:visible }
 }
