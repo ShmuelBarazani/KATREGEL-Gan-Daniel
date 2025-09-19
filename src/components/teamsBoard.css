@@ -1,0 +1,31 @@
+.teams-board { display:flex; flex-direction:column; gap:12px; }
+.teams-toolbar { display:flex; gap:12px; align-items:center; }
+.btn { background:#20333a; color:#dff; border:1px solid #2e525c; padding:6px 10px; border-radius:8px; cursor:pointer; }
+.btn.primary { background:#2b9e68; border-color:#2b9e68; color:#062218; font-weight:700; }
+.counter { color:#9fe9c7; }
+
+.teams-grid {
+  display:grid;
+  gap:14px;
+}
+.team-card {
+  background:#0f1a1f; border:1px solid #234; border-radius:12px; padding:10px;
+  min-height:240px;
+}
+.team-header {
+  display:flex; justify-content:space-between; margin-bottom:8px; font-weight:700; color:#aef0cf;
+}
+.team-meta { color:#79bda1; font-weight:600; }
+
+.players { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.players li {
+  display:flex; align-items:center; gap:10px; background:#0a1217; border:1px solid #27414d; padding:6px 8px; border-radius:10px;
+}
+.players li .handle { opacity:.5; cursor:grab; }
+.players li .name { flex:1; color:#eafaf5; }
+.players li .rating { font-weight:700; color:#7be0b4; background:#0a2a1c; border-radius:8px; padding:2px 6px; }
+
+.drop-remove {
+  margin-top:8px; text-align:center; padding:8px; border:2px dashed #3f6; border-radius:12px;
+  color:#aef0cf; background:#062218;
+}
