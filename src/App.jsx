@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { buildBalancedTeams, avg } from "./logic/balance";
 
-const LS_KEY = "katregel_state_v13";
+const LS_KEY = "katregel_state_v14";
 const uid = () => Math.random().toString(36).slice(2) + "-" + Date.now().toString(36);
 const POS = [
   ["GK", "שוער"],
@@ -23,7 +23,7 @@ const normRole = (v) => {
   return ["GK", "DF", "MF", "FW"].includes(v) ? v : "MF";
 };
 
-/** ממיר הפניה (id / "id" / {id,name} / name) לשם שחקן */
+// שם שחקן מכל רפרנס
 function resolveRefToName(ref, players) {
   if (ref == null) return "";
   if (typeof ref === "number") {
@@ -68,7 +68,7 @@ export default function App() {
   const [teams, setTeams] = useState([]);
   const [roundDraft, setRoundDraft] = useState(null);
 
-  // טעינת players.json
+  // טעינה ראשונית מקובץ players.json
   useEffect(() => {
     (async () => {
       if (store.players.length) return;
@@ -85,7 +85,6 @@ export default function App() {
             role: normRole(p.role ?? p.pos ?? p.עמדה ?? p.תפקיד ?? "MF"),
             rating: Number(p.rating ?? p.r ?? p.ציון ?? 7),
             selected: p.selected ?? true,
-            // תומך ב־IDs או שמות
             prefer: Array.isArray(p.prefer) ? p.prefer : [],
             avoid: Array.isArray(p.avoid) ? p.avoid : [],
           }))
@@ -103,12 +102,14 @@ export default function App() {
   const removePlayer = (id) =>
     setStore((s) => ({ ...s, players: s.players.filter((p) => String(p.id) !== String(id)) }));
 
+  // יצירת כוחות – כל לחיצה תיתן חלוקה אחרת (randomized inside)
   const makeTeams = () => {
     const t = buildBalancedTeams(store.players, numTeams);
     setTeams(t);
     if (MODE !== "viewer") setTab("teams");
   };
 
+  // קבע מחזור
   const lockRound = () => {
     if (!teams.length) return alert("קודם צריך לעשות כוחות");
     const snapshot = teams.map((g) => g.map((p) => ({ id: p.id, name: p.name, goals: 0 })));
@@ -157,6 +158,7 @@ export default function App() {
           teams={teams}
           setTeams={setTeams}
           onLockRound={lockRound}
+          selectedCount={selected.length}
         />
       )}
 
@@ -194,9 +196,12 @@ function TeamsScreen({
   teams,
   setTeams,
   onLockRound,
+  selectedCount,
 }) {
   const [sortBy, setSort] = useState("name");
   const [dir, setDir] = useState("asc");
+  const [hideRatings, setHideRatings] = useState(false);
+
   const sortedPlayers = useMemo(() => {
     const a = [...players];
     const cmp =
@@ -220,7 +225,7 @@ function TeamsScreen({
       return col;
     });
 
-  // Drag: בלי כפילויות
+  // Dragging
   const dragFromList = (e, pid) => {
     e.dataTransfer.setData("text/plain", String(pid));
     e.dataTransfer.effectAllowed = "move";
@@ -230,12 +235,15 @@ function TeamsScreen({
     e.currentTarget.classList.add("over");
   };
   const leaveDrop = (e) => e.currentTarget.classList.remove("over");
-  const dropTo = (e, idx) => {
+
+  // הוספה לקבוצה
+  const dropToTeam = (e, idx) => {
     e.preventDefault();
     e.currentTarget.classList.remove("over");
     const pid = Number(e.dataTransfer.getData("text/plain"));
     setTeams((prev) => {
       const next = prev.map((t) => [...t]);
+      // הסר ממקומות אחרים (למנוע כפילויות)
       for (let i = 0; i < next.length; i++) {
         const j = next[i].findIndex((p) => Number(p.id) === Number(pid));
         if (j >= 0) next[i].splice(j, 1);
@@ -246,12 +254,20 @@ function TeamsScreen({
     });
   };
 
+  // גרירה לאזור טבלת השחקנים – מסיר מהקבוצות
+  const dropToPlayers = (e) => {
+    e.preventDefault();
+    e.currentTarget.classList.remove("over");
+    const pid = Number(e.dataTransfer.getData("text/plain"));
+    setTeams((prev) => prev.map((t) => t.filter((p) => Number(p.id) !== Number(pid))));
+  };
+
   const [printOpen, setPrintOpen] = useState(false);
   const means = teams.map((t) => (t.length ? avg(t.map((p) => p.rating)) : 0));
 
   return (
     <div className="card">
-      <div className="controls" style={{ marginBottom: 10 }}>
+      <div className="controls" style={{ marginBottom: 10, flexWrap: "wrap" }}>
         <span className="badge">{numTeams}</span>
         <button className="btn" onClick={() => setNumTeams((n) => Math.max(2, n - 1))}>
           −
@@ -259,27 +275,37 @@ function TeamsScreen({
         <button className="btn" onClick={() => setNumTeams((n) => Math.min(8, n + 1))}>
           +
         </button>
+
         <button className="btn primary" onClick={makeTeams}>
           עשה כוחות
         </button>
+
+        <button className="btn" onClick={() => setHideRatings((v) => !v)}>
+          {hideRatings ? "הצג ציונים" : "הסתר ציונים (בקבוצות)"}
+        </button>
+
         <button className="btn" onClick={() => setPrintOpen(true)}>
           תצוגת הדפסה
         </button>
         <button className="btn" onClick={onLockRound}>
           קבע מחזור
         </button>
+
+        <div style={{ marginInlineStart: "auto" }} className="muted">
+          מסומנים: <strong>{selectedCount}</strong>
+        </div>
       </div>
 
-      {/* קבוצות למעלה */}
-      <div className="teamsTop">
-        <div className="teamsGrid">
+      {/* קבוצות – ללא גלילה, נעטוף לשתי שורות במקרה של 5+ קבוצות */}
+      <div className="teamsTop noScroll">
+        <div className={`teamsGrid ${hideRatings ? "hideRatings" : ""}`}>
           {teams.map((team, i) => (
             <div
               key={i}
               className="teamCard dropzone"
               onDragOver={allowDrop}
               onDragLeave={leaveDrop}
-              onDrop={(e) => dropTo(e, i)}
+              onDrop={(e) => dropToTeam(e, i)}
             >
               <div className="teamHeader">
                 <div className="name">קבוצה {i + 1}</div>
@@ -290,9 +316,11 @@ function TeamsScreen({
                   <span>
                     <span className="handle">⋮⋮</span> {p.name}
                   </span>
-                  <span className="subtle">
-                    {roleName(p.role)} · {p.rating}
-                  </span>
+                  {!hideRatings && (
+                    <span className="subtle">
+                      {roleName(p.role)} · {p.rating}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -300,8 +328,8 @@ function TeamsScreen({
         </div>
       </div>
 
-      {/* רשימת השחקנים */}
-      <div className="playersBelow">
+      {/* רשימת השחקנים – דראג לכאן מסיר מהקבוצות */}
+      <div className="playersBelow dropzone" onDragOver={allowDrop} onDragLeave={leaveDrop} onDrop={dropToPlayers}>
         <table className="table">
           <thead>
             <tr>
@@ -397,64 +425,73 @@ function TeamsScreen({
   );
 }
 
-/* ---------- Preview הדפסה (Portal) ---------- */
+/* ---------- Preview הדפסה (Modal) ---------- */
 function PrintPreview({ teams, onClose }) {
   const today = new Date().toISOString().slice(0, 10);
+  // 2×2 בכל עמוד (נשתמש ב-page-break אחרי כל 4 קבוצות)
+  const chunks = [];
+  for (let i = 0; i < teams.length; i += 4) chunks.push(teams.slice(i, i + 4));
+
   return createPortal(
     <div className="modal printModal" onClick={onClose}>
       <div className="box printContent" onClick={(e) => e.stopPropagation()}>
         <div className="row" style={{ gap: 8, marginBottom: 10 }}>
           <button className="btn primary" onClick={() => window.print()}>
-            יצוא / PDF הדפס
+            יצוא PDF / הדפס
           </button>
           <button className="btn" onClick={onClose}>
             סגור
           </button>
         </div>
-        <div className="sheetGrid">
-          {teams.map((team, idx) => (
-            <div key={idx} className="sheet">
-              <div className="sheetHeader">
-                <div>תאריך: {today}</div>
-                <div>קבוצה {idx + 1}</div>
-              </div>
-              <table className="sheetTable">
-                <thead>
-                  <tr>
-                    <th style={{ width: "65%" }}>שחקן</th>
-                    <th>שערים</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {team.map((p) => (
-                    <tr key={p.id}>
-                      <td>{p.name}</td>
-                      <td>
-                        <div className="boxes">
-                          {Array.from({ length: 8 }).map((_, i) => (
-                            <div key={i} className="box" />
-                          ))}
-                        </div>
-                      </td>
+
+        {chunks.map((page, pi) => (
+          <div key={pi} className="sheetGrid">
+            {page.map((team, idx) => (
+              <div key={idx} className="sheet">
+                <div className="sheetHeader">
+                  <div>תאריך: {today}</div>
+                  <div>קבוצה {pi * 4 + idx + 1}</div>
+                </div>
+                <table className="sheetTable">
+                  <thead>
+                    <tr>
+                      <th style={{ width: "65%" }}>שחקן</th>
+                      <th>שערים</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div style={{ marginTop: 10 }}>
-                {["ניצחון", "תיקו", "הפסד"].map((label) => (
-                  <div key={label} className="boxRow">
-                    <div className="boxRow-label">{label}</div>
-                    <div className="boxes">
-                      {Array.from({ length: 6 }).map((_, j) => (
-                        <div key={j} className="box" />
-                      ))}
+                  </thead>
+                  <tbody>
+                    {team.map((p) => (
+                      <tr key={p.id}>
+                        <td>{p.name}</td>
+                        <td>
+                          <div className="boxes">
+                            {Array.from({ length: 8 }).map((_, i) => (
+                              <div key={i} className="box" />
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div style={{ marginTop: 10 }}>
+                  {["ניצחון", "תיקו", "הפסד"].map((label) => (
+                    <div key={label} className="boxRow">
+                      <div className="boxRow-label">{label}</div>
+                      <div className="boxes">
+                        {Array.from({ length: 6 }).map((_, j) => (
+                          <div key={j} className="box" />
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+            {/* הפרדת עמודים בהדפסה */}
+            <div className="pageBreak" />
+          </div>
+        ))}
       </div>
     </div>,
     document.body
@@ -550,7 +587,6 @@ function PlayersScreen({ players, update, remove, add }) {
 
       {showAdd && (
         <div className="modal" onClick={() => setShowAdd(false)}>
-          {/* <<< שינוי חשוב: הוספת .wide לשדרוג הגודל >>> */}
           <div className="box wide" onClick={(e) => e.stopPropagation()}>
             <h3>הוספת שחקן</h3>
             <div className="row">
@@ -662,12 +698,7 @@ function RoundsManager({ draft, setDraft, sessions, onSave }) {
           {current.teams.map((t, ti) => (
             <div key={ti} className="card">
               <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-                <strong>
-                  קבוצה {ti + 1}{" "}
-                  <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>
-                    ({t.players.map((p) => p.name).join(", ")})
-                  </span>
-                </strong>
+                <strong>קבוצה {ti + 1}</strong>
                 <div className="row">
                   <label>
                     נצ׳:{" "}
@@ -802,7 +833,7 @@ function RankingScreen({ sessions }) {
   const monthlyGoals = sumGoals(filtered);
   const yearlyGoals = sumGoals(sessions.filter((s) => new Date(s.date).getFullYear() === year));
 
-  // אליפות החודש: 3 לניצחון, 1 לתיקו (תאימות לאחור)
+  // אליפות החודש
   const monthlyChamp = useMemo(() => {
     const pts = new Map();
     for (const s of filtered) {
@@ -825,9 +856,9 @@ function RankingScreen({ sessions }) {
 
   return (
     <div className="row" style={{ gap: 12, alignItems: "flex-start" }}>
-      <div className="card" style={{ flex: 1 }}>
+      <div className="card wide" style={{ flex: 1 }}>
         <div className="section-title">מלך השערים — חודשי</div>
-        <table className="table">
+        <table className="table pretty">
           <tbody>
             {monthlyGoals.map(([n, v], i) => (
               <tr key={n}>
@@ -839,9 +870,9 @@ function RankingScreen({ sessions }) {
           </tbody>
         </table>
       </div>
-      <div className="card" style={{ flex: 1 }}>
+      <div className="card wide" style={{ flex: 1 }}>
         <div className="section-title">מלך השערים — שנתי</div>
-        <table className="table">
+        <table className="table pretty">
           <tbody>
             {yearlyGoals.map(([n, v], i) => (
               <tr key={n}>
@@ -853,14 +884,14 @@ function RankingScreen({ sessions }) {
           </tbody>
         </table>
       </div>
-      <div className="card" style={{ flex: 1 }}>
+      <div className="card wide" style={{ flex: 1 }}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
           <div className="section-title">אליפות החודש {withBonus ? "(כולל בונוסים)" : ""}</div>
           <label className="switch">
             <input type="checkbox" checked={withBonus} onChange={(e) => setWithBonus(e.target.checked)} /> עם בונוס
           </label>
         </div>
-        <table className="table">
+        <table className="table pretty">
           <tbody>
             {monthlyChamp.map(([n, v], i) => (
               <tr key={n}>
@@ -886,7 +917,7 @@ function RankingScreen({ sessions }) {
       </div>
 
       {open && (
-        <div className="card" style={{ flex: 1 }}>
+        <div className="card wide" style={{ flex: 1 }}>
           <div className="section-title">מחזור — {new Date(open.date).toLocaleDateString()}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
             {open.teams.map((t, ti) => (
