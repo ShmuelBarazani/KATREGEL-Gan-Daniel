@@ -1,132 +1,176 @@
-// src/logic/balance.js
-export const sum = (a) => a.reduce((s, x) => s + Number(x || 0), 0);
-export const avg = (a) => (a.length ? sum(a.map(Number)) / a.length : 0);
+// אלגוריתם איזון קבוצות עם התחשבות ב"חייב עם" / "לא עם"
+// ומטרה: ממוצעים כמה שיותר שווים + חלוקת גדלים שווה ככל האפשר.
+// בכל קריאה יש רנדומליות קלה כדי לקבל קומבינציות שונות בלחיצה חוזרת.
 
-export function computeSizes(n, k) {
+export const avg = (arr) => (arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : 0);
+
+// עוזר: הפניה לשחקן -> מזהה השחקן (תומך בשם/מזהה/אובייקט)
+function refToId(ref, byName, byId) {
+  if (ref == null) return null;
+  if (typeof ref === "number") return ref;
+  if (typeof ref === "string") {
+    if (/^\d+$/.test(ref)) return Number(ref);
+    const f = byName.get(ref.trim());
+    return f ? f.id : null;
+  }
+  if (typeof ref === "object") {
+    if (ref.id != null) return ref.id;
+    if (ref.name && byName.has(ref.name)) return byName.get(ref.name).id;
+  }
+  return null;
+}
+
+// יצירת קבוצות "חייב עם" (clusters)
+function buildPreferClusters(players, sel) {
+  // מיפויים
+  const byId = new Map(players.map((p) => [Number(p.id), p]));
+  const byName = new Map(players.map((p) => [p.name, p]));
+
+  // גרף שכנות לפי prefer
+  const adj = new Map();
+  for (const p of sel) {
+    adj.set(Number(p.id), new Set());
+  }
+  for (const p of sel) {
+    const from = Number(p.id);
+    const list = Array.isArray(p.prefer) ? p.prefer : [];
+    for (const ref of list) {
+      const to = refToId(ref, byName, byId);
+      if (to != null && adj.has(to)) {
+        adj.get(from).add(Number(to));
+        adj.get(Number(to)).add(from);
+      }
+    }
+  }
+
+  // בניית רכיבי קשירות (BFS) -> קלסטרים
+  const seen = new Set();
+  const clusters = [];
+  for (const p of sel) {
+    const start = Number(p.id);
+    if (seen.has(start)) continue;
+    const q = [start];
+    const comp = [];
+    seen.add(start);
+    while (q.length) {
+      const v = q.shift();
+      comp.push(byId.get(v));
+      for (const w of adj.get(v) || []) {
+        if (!seen.has(w)) {
+          seen.add(w);
+          q.push(w);
+        }
+      }
+    }
+    clusters.push(comp);
+  }
+
+  return clusters;
+}
+
+// בדיקת אילוץ "לא עם"
+function violatesAvoid(team, cluster, avoidMap) {
+  for (const a of team) {
+    const aAvoid = avoidMap.get(Number(a.id)) || new Set();
+    for (const b of cluster) {
+      if (aAvoid.has(Number(b.id))) return true;
+    }
+  }
+  for (const b of cluster) {
+    const bAvoid = avoidMap.get(Number(b.id)) || new Set();
+    for (const a of team) {
+      if (bAvoid.has(Number(a.id))) return true;
+    }
+  }
+  return false;
+}
+
+// קביעת גדלי קבוצות שווים ככל האפשר
+function teamSizes(n, k) {
   const base = Math.floor(n / k);
-  const extra = n % k;
-  return Array.from({ length: k }, (_, i) => base + (i < extra ? 1 : 0));
+  const rem = n % k; // rem קבוצות יקבלו עוד שחקן אחד
+  const sizes = Array.from({ length: k }, (_, i) => base + (i < rem ? 1 : 0));
+  return sizes;
 }
 
-// בדיקות אילוצים – תומך ב-id או name
-function listIncludesRef(list, player) {
-  if (!Array.isArray(list)) return false;
-  return list.some((v) =>
-    typeof v === "number"
-      ? v === player.id
-      : typeof v === "string"
-      ? v === player.name
-      : v?.id
-      ? v.id === player.id
-      : v?.name
-      ? v.name === player.name
-      : false
-  );
-}
-function violatesAvoid(team, p) {
-  return team.some((x) => listIncludesRef(x.avoid, p) || listIncludesRef(p.avoid, x));
-}
-function preferSatisfied(team, p) {
-  if (!p.prefer || p.prefer.length === 0) return true;
-  return team.some((x) => listIncludesRef(p.prefer, x));
-}
-function validTeam(team) {
-  for (let i = 0; i < team.length; i++) {
-    const p = team[i];
-    const rest = team.filter((_, j) => j !== i);
-    if (violatesAvoid(rest, p)) return false;
+export function buildBalancedTeams(players, k) {
+  const selected = players.filter((p) => p.selected);
+  const n = selected.length;
+  if (n === 0 || k < 2) return Array.from({ length: k }, () => []);
+
+  const byId = new Map(selected.map((p) => [Number(p.id), p]));
+  const byName = new Map(selected.map((p) => [p.name, p]));
+
+  // הכנת avoidMap לפי מזהים
+  const avoidMap = new Map(); // id -> Set(ids)
+  for (const p of selected) {
+    const set = new Set();
+    const list = Array.isArray(p.avoid) ? p.avoid : [];
+    for (const ref of list) {
+      const id = refToId(ref, byName, byId);
+      if (id != null && byId.has(Number(id))) set.add(Number(id));
+    }
+    avoidMap.set(Number(p.id), set);
   }
-  return true;
-}
 
-export function buildBalancedTeams(allPlayers, k) {
-  const pool = allPlayers.filter((p) => p.selected);
-  const sizes = computeSizes(pool.length, k);
+  // בניית קלסטרים של "חייב עם"
+  let clusters = buildPreferClusters(players, selected);
+
+  // ניקוד קלסטרים: סכום ציונים + מעט רנדומליות לשבירת תיקו
+  clusters = clusters
+    .map((c) => ({
+      members: c,
+      sum: c.reduce((s, p) => s + Number(p.rating || 0), 0),
+    }))
+    .sort((a, b) => b.sum - a.sum || Math.random() - 0.5);
+
+  // גדלי קבוצות מטרה
+  const targetSizes = teamSizes(n, k);
+
+  // מטרה לסכום ציונים לקבוצה: להשוות סכום כולל / k
+  const totalRating = selected.reduce((s, p) => s + Number(p.rating || 0), 0);
+  const targetSum = totalRating / k;
+
+  // אתחול קבוצות
   const teams = Array.from({ length: k }, () => []);
-  if (!pool.length) return teams;
+  const teamSums = Array.from({ length: k }, () => 0);
 
-  const globalMean = avg(pool.map((p) => p.rating));
-
-  // דירוג יורד
-  const sorted = [...pool].sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
-
-  for (const p of sorted) {
-    let best = -1;
-    let bestScore = Infinity;
-
+  // הכנסת קלסטרים אחד-אחד לתוך הקבוצה "הטובה ביותר"
+  for (const cl of clusters) {
+    const members = cl.members;
+    const size = members.length;
+    // אפשר רק לקבוצות שיש להן מקום לקלסטר כולו ושאין קונפליקט avoid
+    const candidates = [];
     for (let i = 0; i < k; i++) {
-      const t = teams[i];
-      if (t.length >= sizes[i]) continue;
-      if (violatesAvoid(t, p)) continue;
-
-      const wantSum = globalMean * (t.length + 1);
-      const newSum = sum(t.map((x) => x.rating)) + Number(p.rating || 0);
-      let score = Math.abs(newSum - wantSum);
-
-      if (p.prefer && p.prefer.length && !preferSatisfied(t, p)) score += 5;
-
-      if (score < bestScore) {
-        bestScore = score;
-        best = i;
-      }
+      if (teams[i].length + size > targetSizes[i]) continue;
+      if (violatesAvoid(teams[i], members, avoidMap)) continue;
+      // עלות: כמה מתרחק מהמטרה
+      const newSum = teamSums[i] + cl.sum;
+      const cost = Math.abs(newSum - targetSum);
+      candidates.push({ i, cost });
     }
-
-    if (best < 0) {
+    // אם אין קנדידטים (בגלל אילוצים) – נתיר חריגה זמנית: נחפש קבוצה בלי קונפליקט avoid עם מקום חלקי
+    if (!candidates.length) {
       for (let i = 0; i < k; i++) {
-        const t = teams[i];
-        if (t.length >= sizes[i]) continue;
-        const wantSum = globalMean * (t.length + 1);
-        const newSum = sum(t.map((x) => x.rating)) + Number(p.rating || 0);
-        const score = Math.abs(newSum - wantSum);
-        if (score < bestScore) {
-          bestScore = score;
-          best = i;
+        if (!violatesAvoid(teams[i], members, avoidMap)) {
+          const newSum = teamSums[i] + cl.sum;
+          const cost = Math.abs(newSum - targetSum) + 1000; // ענישה כדי להימנע ככל האפשר
+          candidates.push({ i, cost });
         }
       }
     }
-    if (best < 0) best = teams.findIndex((t, i) => t.length < sizes[i]);
-    if (best < 0) best = 0;
-    teams[best].push(p);
+    // בחר את המועמד עם העלות הנמוכה ביותר, שבירת תיקו רנדומלית
+    candidates.sort((a, b) => a.cost - b.cost || Math.random() - 0.5);
+    const pick = candidates[0] ? candidates[0].i : 0;
+
+    teams[pick].push(...members);
+    teamSums[pick] += cl.sum;
   }
 
-  // שיפור עדין – חילופים מקומיים לצמצום סטיית ממוצעים ולאכוף חייב-עם
-  const objective = (T) => {
-    const means = T.map((t) => avg(t.map((p) => p.rating)));
-    const spread = Math.max(...means) - Math.min(...means);
-    const prefPenalty = T.reduce((acc, t) => {
-      for (const p of t) if (p.prefer && p.prefer.length && !preferSatisfied(t, p)) acc += 1;
-      return acc;
-    }, 0);
-    return spread * 100 + prefPenalty * 50;
-  };
-  let bestT = teams.map((t) => t.slice());
-  let bestObj = objective(bestT);
-  let tries = 0;
-
-  while (tries < 600) {
-    let improved = false;
-    outer: for (let a = 0; a < k; a++) {
-      for (let b = a + 1; b < k; b++) {
-        for (const pa of bestT[a]) {
-          for (const pb of bestT[b]) {
-            const A = bestT[a].filter((x) => x !== pa).concat(pb);
-            const B = bestT[b].filter((x) => x !== pb).concat(pa);
-            if (!validTeam(A) || !validTeam(B)) continue;
-            const cand = bestT.map((t, i) => (i === a ? A : i === b ? B : t));
-            const obj = objective(cand);
-            if (obj + 1e-9 < bestObj) {
-              bestT = cand;
-              bestObj = obj;
-              improved = true;
-              break outer;
-            }
-          }
-        }
-      }
-    }
-    if (!improved) tries++;
-    else tries = 0;
+  // לוודא סידור לפי ציון יורד
+  for (let i = 0; i < k; i++) {
+    teams[i].sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
   }
 
-  return bestT.map((t) => t.sort((x, y) => Number(y.rating || 0) - Number(x.rating || 0)));
+  return teams;
 }
