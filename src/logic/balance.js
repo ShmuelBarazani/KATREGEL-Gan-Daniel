@@ -1,176 +1,273 @@
-// אלגוריתם איזון קבוצות עם התחשבות ב"חייב עם" / "לא עם"
-// ומטרה: ממוצעים כמה שיותר שווים + חלוקת גדלים שווה ככל האפשר.
-// בכל קריאה יש רנדומליות קלה כדי לקבל קומבינציות שונות בלחיצה חוזרת.
+/* 
+  balance.js
+  אלגוריתם בניית קבוצות מאוזנות:
+  - חלוקת שחקנים שסומנו למשחק ל-k קבוצות בגודל הכי שווה שניתן.
+  - "חייב עם": מאחד שחקנים לקבוצות-על (Union-Find).
+  - "לא עם": איסור קשיח לשיבוץ יחד בקבוצה.
+  - אופטימיזציה: הקטנת שונות הממוצעים בין הקבוצות.
+  - ריצות מרובות = "עשה כוחות" שונה בכל לחיצה.
+*/
 
-export const avg = (arr) => (arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : 0);
-
-// עוזר: הפניה לשחקן -> מזהה השחקן (תומך בשם/מזהה/אובייקט)
-function refToId(ref, byName, byId) {
-  if (ref == null) return null;
-  if (typeof ref === "number") return ref;
-  if (typeof ref === "string") {
-    if (/^\d+$/.test(ref)) return Number(ref);
-    const f = byName.get(ref.trim());
-    return f ? f.id : null;
+function dsuMakeSet(x, parent) { if (!parent.has(x)) parent.set(x, x); }
+function dsuFind(x, parent) {
+  while (parent.get(x) !== x) {
+    parent.set(x, parent.get(parent.get(x)));
+    x = parent.get(x);
   }
-  if (typeof ref === "object") {
-    if (ref.id != null) return ref.id;
-    if (ref.name && byName.has(ref.name)) return byName.get(ref.name).id;
-  }
-  return null;
+  return x;
+}
+function dsuUnion(a, b, parent) {
+  const ra = dsuFind(a, parent);
+  const rb = dsuFind(b, parent);
+  if (ra !== rb) parent.set(ra, rb);
 }
 
-// יצירת קבוצות "חייב עם" (clusters)
-function buildPreferClusters(players, sel) {
-  // מיפויים
-  const byId = new Map(players.map((p) => [Number(p.id), p]));
-  const byName = new Map(players.map((p) => [p.name, p]));
-
-  // גרף שכנות לפי prefer
-  const adj = new Map();
-  for (const p of sel) {
-    adj.set(Number(p.id), new Set());
-  }
-  for (const p of sel) {
-    const from = Number(p.id);
-    const list = Array.isArray(p.prefer) ? p.prefer : [];
-    for (const ref of list) {
-      const to = refToId(ref, byName, byId);
-      if (to != null && adj.has(to)) {
-        adj.get(from).add(Number(to));
-        adj.get(Number(to)).add(from);
-      }
-    }
-  }
-
-  // בניית רכיבי קשירות (BFS) -> קלסטרים
-  const seen = new Set();
-  const clusters = [];
-  for (const p of sel) {
-    const start = Number(p.id);
-    if (seen.has(start)) continue;
-    const q = [start];
-    const comp = [];
-    seen.add(start);
-    while (q.length) {
-      const v = q.shift();
-      comp.push(byId.get(v));
-      for (const w of adj.get(v) || []) {
-        if (!seen.has(w)) {
-          seen.add(w);
-          q.push(w);
-        }
-      }
-    }
-    clusters.push(comp);
-  }
-
-  return clusters;
-}
-
-// בדיקת אילוץ "לא עם"
-function violatesAvoid(team, cluster, avoidMap) {
-  for (const a of team) {
-    const aAvoid = avoidMap.get(Number(a.id)) || new Set();
-    for (const b of cluster) {
-      if (aAvoid.has(Number(b.id))) return true;
-    }
-  }
-  for (const b of cluster) {
-    const bAvoid = avoidMap.get(Number(b.id)) || new Set();
-    for (const a of team) {
-      if (bAvoid.has(Number(a.id))) return true;
-    }
-  }
-  return false;
-}
-
-// קביעת גדלי קבוצות שווים ככל האפשר
-function teamSizes(n, k) {
+function distributeCapacities(n, k) {
   const base = Math.floor(n / k);
-  const rem = n % k; // rem קבוצות יקבלו עוד שחקן אחד
-  const sizes = Array.from({ length: k }, (_, i) => base + (i < rem ? 1 : 0));
-  return sizes;
+  const r = n % k;
+  const cap = Array.from({ length: k }, (_, i) => base + (i < r ? 1 : 0));
+  return cap;
 }
 
-export function buildBalancedTeams(players, k) {
-  const selected = players.filter((p) => p.selected);
-  const n = selected.length;
-  if (n === 0 || k < 2) return Array.from({ length: k }, () => []);
+function varianceAvgs(teams) {
+  const avgs = teams.map(t => t.players.length ? t.sum / t.players.length : 0);
+  const mean = avgs.reduce((s, x) => s + x, 0) / Math.max(1, avgs.length);
+  return avgs.reduce((s, x) => s + Math.pow(x - mean, 2), 0) / Math.max(1, avgs.length);
+}
 
-  const byId = new Map(selected.map((p) => [Number(p.id), p]));
-  const byName = new Map(selected.map((p) => [p.name, p]));
-
-  // הכנת avoidMap לפי מזהים
-  const avoidMap = new Map(); // id -> Set(ids)
-  for (const p of selected) {
-    const set = new Set();
-    const list = Array.isArray(p.avoid) ? p.avoid : [];
-    for (const ref of list) {
-      const id = refToId(ref, byName, byId);
-      if (id != null && byId.has(Number(id))) set.add(Number(id));
+function canPlaceGroup(team, group, notWithMap, teamSet) {
+  // איסור קשיח על "לא עם": אף אחד מהקבוצה לא יכול להיות באותה קבוצה עם מי שמסומן לו notWith
+  for (const pid of group.ids) {
+    const banned = notWithMap.get(pid);
+    if (!banned) continue;
+    for (const x of banned) {
+      if (teamSet.has(x)) return false;
     }
-    avoidMap.set(Number(p.id), set);
+  }
+  return true;
+}
+
+function applyGroupToTeam(team, group, teamSet) {
+  for (const p of group.members) {
+    team.players.push(p);
+    team.sum += p.rating;
+    teamSet.add(p.id);
+  }
+}
+
+function removeGroupFromTeam(team, group, teamSet) {
+  const ids = new Set(group.ids);
+  team.players = team.players.filter(p => {
+    const keep = !ids.has(p.id);
+    if (!keep) team.sum -= p.rating;
+    return keep;
+  });
+  for (const id of ids) teamSet.delete(id);
+}
+
+function cloneTeams(teams) {
+  return teams.map(t => ({
+    players: [...t.players],
+    sum: t.sum
+  }));
+}
+
+// שיפור לוקאלי: ניסיון להחליף/להעביר קבוצות-על בין קבוצות לצמצום שונות הממוצעים
+function localImprove(teams, groupById, notWithMap, teamSets, caps, maxSteps = 1200) {
+  // בונה מיפוי קבוצה-על -> באיזו קבוצה היא כרגע
+  const groupIdByPlayer = new Map();
+  for (const [gid, g] of groupById) {
+    for (const p of g.members) groupIdByPlayer.set(p.id, gid);
   }
 
-  // בניית קלסטרים של "חייב עם"
-  let clusters = buildPreferClusters(players, selected);
-
-  // ניקוד קלסטרים: סכום ציונים + מעט רנדומליות לשבירת תיקו
-  clusters = clusters
-    .map((c) => ({
-      members: c,
-      sum: c.reduce((s, p) => s + Number(p.rating || 0), 0),
-    }))
-    .sort((a, b) => b.sum - a.sum || Math.random() - 0.5);
-
-  // גדלי קבוצות מטרה
-  const targetSizes = teamSizes(n, k);
-
-  // מטרה לסכום ציונים לקבוצה: להשוות סכום כולל / k
-  const totalRating = selected.reduce((s, p) => s + Number(p.rating || 0), 0);
-  const targetSum = totalRating / k;
-
-  // אתחול קבוצות
-  const teams = Array.from({ length: k }, () => []);
-  const teamSums = Array.from({ length: k }, () => 0);
-
-  // הכנסת קלסטרים אחד-אחד לתוך הקבוצה "הטובה ביותר"
-  for (const cl of clusters) {
-    const members = cl.members;
-    const size = members.length;
-    // אפשר רק לקבוצות שיש להן מקום לקלסטר כולו ושאין קונפליקט avoid
-    const candidates = [];
-    for (let i = 0; i < k; i++) {
-      if (teams[i].length + size > targetSizes[i]) continue;
-      if (violatesAvoid(teams[i], members, avoidMap)) continue;
-      // עלות: כמה מתרחק מהמטרה
-      const newSum = teamSums[i] + cl.sum;
-      const cost = Math.abs(newSum - targetSum);
-      candidates.push({ i, cost });
+  const teamOfGroup = new Map();
+  for (let ti = 0; ti < teams.length; ti++) {
+    for (const p of teams[ti].players) {
+      const gid = groupIdByPlayer.get(p.id);
+      teamOfGroup.set(gid, ti);
     }
-    // אם אין קנדידטים (בגלל אילוצים) – נתיר חריגה זמנית: נחפש קבוצה בלי קונפליקט avoid עם מקום חלקי
-    if (!candidates.length) {
-      for (let i = 0; i < k; i++) {
-        if (!violatesAvoid(teams[i], members, avoidMap)) {
-          const newSum = teamSums[i] + cl.sum;
-          const cost = Math.abs(newSum - targetSum) + 1000; // ענישה כדי להימנע ככל האפשר
-          candidates.push({ i, cost });
+  }
+
+  const groups = [...groupById.values()];
+  let bestVar = varianceAvgs(teams);
+
+  for (let step = 0; step < maxSteps; step++) {
+    const g = groups[Math.floor(Math.random() * groups.length)];
+    const from = teamOfGroup.get(g.id);
+
+    // נסה להעביר לקבוצה אחרת או לבצע swap עם קבוצה-על אחרת
+    for (let to = 0; to < teams.length; to++) {
+      if (to === from) continue;
+      // בדוק capacity
+      const fromSize = teams[from].players.length;
+      const toSize = teams[to].players.length;
+      const canMove = toSize + g.size <= caps[to] && (fromSize - g.size) >= 0;
+
+      if (canMove && canPlaceGroup(teams[to], g, notWithMap, teamSets[to])) {
+        // נסה מעבר ישיר
+        removeGroupFromTeam(teams[from], g, teamSets[from]);
+        applyGroupToTeam(teams[to], g, teamSets[to]);
+
+        const v = varianceAvgs(teams);
+        if (v < bestVar) {
+          bestVar = v;
+          teamOfGroup.set(g.id, to);
+          break;
+        } else {
+          // החזר
+          removeGroupFromTeam(teams[to], g, teamSets[to]);
+          applyGroupToTeam(teams[from], g, teamSets[from]);
+        }
+      } else {
+        // נסה SWAP עם קבוצה-על אחרת
+        for (const [gid2, g2] of groupById) {
+          if (gid2 === g.id) continue;
+          const otherTeam = teamOfGroup.get(gid2);
+          if (otherTeam !== to) continue;
+          // בדוק capacity לאחר SWAP
+          const fromNew = teams[from].players.length - g.size + g2.size;
+          const toNew = teams[to].players.length - g2.size + g.size;
+          if (fromNew <= caps[from] && toNew <= caps[to]) {
+            // בדוק מגבלות notWith
+            if (
+              canPlaceGroup(teams[to], g, notWithMap, teamSets[to]) &&
+              canPlaceGroup(teams[from], g2, notWithMap, teamSets[from])
+            ) {
+              // החלף
+              removeGroupFromTeam(teams[from], g, teamSets[from]);
+              removeGroupFromTeam(teams[to], g2, teamSets[to]);
+              applyGroupToTeam(teams[from], g2, teamSets[from]);
+              applyGroupToTeam(teams[to], g, teamSets[to]);
+
+              const v = varianceAvgs(teams);
+              if (v < bestVar) {
+                bestVar = v;
+                teamOfGroup.set(g.id, to);
+                teamOfGroup.set(g2.id, from);
+                break;
+              } else {
+                // החזר
+                removeGroupFromTeam(teams[from], g2, teamSets[from]);
+                removeGroupFromTeam(teams[to], g, teamSets[to]);
+                applyGroupToTeam(teams[from], g, teamSets[from]);
+                applyGroupToTeam(teams[to], g2, teamSets[to]);
+              }
+            }
+          }
         }
       }
     }
-    // בחר את המועמד עם העלות הנמוכה ביותר, שבירת תיקו רנדומלית
-    candidates.sort((a, b) => a.cost - b.cost || Math.random() - 0.5);
-    const pick = candidates[0] ? candidates[0].i : 0;
+  }
+}
 
-    teams[pick].push(...members);
-    teamSums[pick] += cl.sum;
+export function balanceTeams(players, k, { runs = 12 } = {}) {
+  // קח רק שחקנים שסומנו לשחק
+  const pool = players.filter(p => p.playing);
+
+  // capacities
+  const caps = distributeCapacities(pool.length, k);
+
+  // בנה Union-Find ל"חייב עם"
+  const parent = new Map();
+  for (const p of pool) dsuMakeSet(p.id, parent);
+  for (const p of pool) {
+    if (Array.isArray(p.mustWith)) {
+      for (const q of p.mustWith) {
+        if (pool.find(x => x.id === q)) dsuUnion(p.id, q, parent);
+      }
+    }
   }
 
-  // לוודא סידור לפי ציון יורד
-  for (let i = 0; i < k; i++) {
-    teams[i].sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
+  // בנה קבוצות-על
+  const groupsByRoot = new Map();
+  for (const p of pool) {
+    const r = dsuFind(p.id, parent);
+    if (!groupsByRoot.has(r)) groupsByRoot.set(r, []);
+    groupsByRoot.get(r).push(p);
+  }
+  let gidInc = 1;
+  const groups = [];
+  const groupById = new Map();
+  for (const [root, members] of groupsByRoot) {
+    const g = {
+      id: gidInc++,
+      ids: members.map(m => m.id),
+      members,
+      size: members.length,
+      sum: members.reduce((s, m) => s + m.rating, 0),
+      avg: members.reduce((s, m) => s + m.rating, 0) / members.length
+    };
+    groups.push(g);
+    groupById.set(g.id, g);
   }
 
-  return teams;
+  // "לא עם" לכל שחקן -> Set
+  const notWithMap = new Map();
+  for (const p of pool) {
+    notWithMap.set(p.id, new Set(Array.isArray(p.notWith) ? p.notWith : []));
+  }
+
+  // סדר קבוצות-על: מהממוצע הגבוה לנמוך (יותר יציב לזרוק חזקות קודם)
+  groups.sort((a, b) => b.avg - a.avg);
+
+  // ריצות מרובות לבחור את הטוב ביותר (שונות ממוצעים מינימלית)
+  let best = null;
+  let bestVar = Infinity;
+
+  for (let run = 0; run < Math.max(1, runs); run++) {
+    // ערבוב קל לשונות
+    const shuffled = [...groups].sort(() => Math.random() - 0.5);
+
+    const teams = Array.from({ length: k }, () => ({ players: [], sum: 0 }));
+    const teamSets = Array.from({ length: k }, () => new Set());
+
+    // שיבוץ גרידי: כל פעם לקבוצה עם ממוצע נמוך ביותר שיכולה לקלוט את הקבוצה-על בכפוף ל-capacity ו-"לא עם"
+    for (const g of shuffled) {
+      let bestIdx = -1;
+      let bestScore = Infinity;
+
+      for (let ti = 0; ti < k; ti++) {
+        const t = teams[ti];
+        if (t.players.length + g.size > caps[ti]) continue;
+        if (!canPlaceGroup(t, g, notWithMap, teamSets[ti])) continue;
+
+        // score = ממוצע חדש של הקבוצה (כמה יקרב לאיזון – יעד = ממוצע כללי)
+        const newAvg = (t.sum + g.sum) / (t.players.length + g.size);
+        // יעד: הממוצע הכללי
+        const globalAvg = pool.reduce((s, p) => s + p.rating, 0) / Math.max(1, pool.length);
+        const score = Math.abs(newAvg - globalAvg);
+
+        if (score < bestScore) {
+          bestScore = score;
+          bestIdx = ti;
+        }
+      }
+
+      if (bestIdx === -1) {
+        // לא נמצא חוקי -> נכשל בריצה הזו
+        // כדי לא “לשבור” את הקשיחות של "לא עם", פשוט נפסול את הריצה הזו
+        // (בפרקטיקה, בגלל הריצות המרובות, אחת מהריצות תצליח)
+        bestIdx = 0; // תאחסן למניעת קריסה
+        return balanceTeams(players, k, { runs: runs + 1 }); // נסה שוב עם עוד ריצות
+      }
+
+      applyGroupToTeam(teams[bestIdx], g, teamSets[bestIdx]);
+    }
+
+    // שיפור לוקאלי מצמצם שונות
+    localImprove(teams, groupById, notWithMap, teamSets, caps, 1200);
+
+    const v = varianceAvgs(teams);
+    if (v < bestVar) {
+      bestVar = v;
+      best = teams;
+    }
+  }
+
+  // החזר במבנה נוח: רשימת קבוצות + ממוצע
+  return best.map((t, i) => ({
+    id: i + 1,
+    players: t.players,
+    avg: t.players.length ? (t.sum / t.players.length) : 0
+  }));
 }
