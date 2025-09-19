@@ -1,85 +1,74 @@
+// src/components/PrintModal.jsx
 import React from "react";
-import "./print.css";
 
-/*
-  props:
-    open: boolean
-    onClose()
-    onPrint()
-    dateStr: string (תאריך)
-    teams: [{id, players:[{id,name}], ...}]
-*/
+/** רצועת תיבות סימון */
+function SquareRow({ count = 6, size = 22, border = "#000" }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${count}, ${size}px)`, gap: 8 }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          style={{
+            width: size,
+            height: size,
+            border: `1px solid ${border}`,
+            borderRadius: 4,
+            background: "#fff",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function PrintModal({ open, onClose, onPrint, dateStr, teams }) {
   if (!open) return null;
 
-  // 4 כרטיסים בעמוד (2×2)
-  const chunks = [];
-  for (let i = 0; i < teams.length; i += 4) chunks.push(teams.slice(i, i + 4));
+  const teamsCount = Array.isArray(teams) ? teams.length : 0;
+  const cols = teamsCount >= 5 ? 3 : 2;       // 5–6 קבוצות = 3×2; אחרת 2×2
+  const boxSize = teamsCount >= 5 ? 18 : 22;  // תיבות קטנות יותר כשיש הרבה קבוצות
+  const fontBase = teamsCount >= 5 ? 12.5 : 14;
+
+  const handlePrint = () => {
+    try {
+      onPrint && onPrint(); // משאיר התאמה עם השימוש הקיים
+    } finally {
+      window.print();
+    }
+  };
 
   return (
-    <div className="print-overlay">
-      <div className="print-dialog">
-        <div className="print-header">
-          <button className="btn outline" onClick={onClose}>סגור</button>
-          <button className="btn primary" onClick={onPrint}>יצוא / PDF / הדפס</button>
-          <div className="spacer" />
-          <div className="title">תצוגת הדפסה</div>
-        </div>
-
-        <div className="print-pages">
-          {chunks.map((page, idx) => (
-            <div key={idx} className="print-page">
-              {page.map(team => <TeamCard key={team.id} team={team} dateStr={dateStr} />)}
-              {Array.from({length: 4 - page.length}).map((_,i)=><div key={`stub-${i}`} className="teamcard stub"/>)}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function TeamCard({ team, dateStr }) {
-  const boxes = Array.from({ length: 10 });
-
-  return (
-    <div className="teamcard">
-      <div className="teamcard-head">
-        <div>קבוצה {team.id}</div>
-        <div className="date">{dateStr}</div>
-      </div>
-
-      <table className="print-table">
-        <thead>
-          <tr>
-            <th className="w-goals">שערים</th>
-            <th>שחקן</th>
-          </tr>
-        </thead>
-        <tbody>
-          {team.players.map(p => (
-            <tr key={p.id}>
-              <td className="goals-cells">
-                {boxes.map((_,i)=>(<span key={i} className="box" />))}
-              </td>
-              <td className="player-name">{p.name}</td>
-            </tr>
-          ))}
-          {/* שורת רווח */}
-          <tr><td colSpan={2}>&nbsp;</td></tr>
-          {/* ניצחון / תיקו / הפסד */}
-          <tr className="results-row">
-            <td className="goals-cells" colSpan={2}>
-              <div className="result-label">ניצחון</div>
-              {boxes.slice(0,5).map((_,i)=>(<span key={"w"+i} className="box" />))}
-              <div className="result-label">תיקו</div>
-              {boxes.slice(0,5).map((_,i)=>(<span key={"d"+i} className="box" />))}
-              <div className="result-label">הפסד</div>
-              {boxes.slice(0,5).map((_,i)=>(<span key={"l"+i} className="box" />))}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  );
-}
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,.6)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 999,
+      }}
+      onMouseDown={onClose}
+    >
+      <div
+        style={{
+          background: "#0f172a",
+          border: "1px solid #1d2a4a",
+          borderRadius: 14,
+          width: "min(1100px,96vw)",
+          maxHeight: "92vh",
+          overflow: "auto",
+          padding: 16,
+          color: "#dbeafe",
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <h3 style={{ margin: 0, color: "#6ee7b7" }}>תצוגת הדפסה</h3>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              style={{
+                background: "transparent",
+                color: "#a7f3d0",
+                border: "1px solid #136c38",
+                borderR
